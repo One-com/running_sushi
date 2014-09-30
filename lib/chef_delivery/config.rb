@@ -29,10 +29,11 @@ module ChefDelivery
     timestamp false
     config_file '/etc/chef_delivery_config.rb'
     pidfile '/var/run/chef_delivery.pid'
-    lockfile '/var/lock/subsys/chef_delivery'
+    lockfile '/var/lock/chef_delivery'
     master_path '/var/chef/chef_delivery_work'
     repo_url nil
     reponame 'ops'
+    user 'admin'
     pem '/etc/chef-server/admin.pem'
     chef_server_url 'http://127.0.0.1:8889'
     client_path 'clients'

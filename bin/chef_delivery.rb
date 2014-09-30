@@ -22,6 +22,8 @@ require 'chef_diff/changeset'
 require 'chef_delivery/config'
 require 'chef_delivery/logging'
 require 'chef_delivery/hooks'
+require 'chef_delivery/knife'
+require 'chef/config'
 require 'optparse'
 require 'logger'
 
@@ -65,12 +67,20 @@ def read_checkpoint
 end
 
 def full_upload(knife)
+  ChefDelivery::Log.warn('Uploading all clients')
+  knife.client_upload_all
   ChefDelivery::Log.warn('Uploading all cookbooks')
   knife.cookbook_upload_all
-  ChefDelivery::Log.warn('Uploading all roles')
-  knife.role_upload_all
   ChefDelivery::Log.warn('Uploading all databags')
   knife.databag_upload_all
+  ChefDelivery::Log.warn('Uploading all environments')
+  knife.environment_upload_all
+  ChefDelivery::Log.warn('Uploading all nodes')
+  knife.node_upload_all
+  ChefDelivery::Log.warn('Uploading all roles')
+  knife.role_upload_all
+  ChefDelivery::Log.warn('Uploading all users')
+  knife.user_upload_all
 end
 
 def partial_upload(knife, repo, checkpoint, local_head)
@@ -209,6 +219,11 @@ def setup_config
     ChefDelivery::Hooks.atexit(ChefDelivery::Config.dry_run,
                                   $success, $status_msg)
   end
+
+  Chef::Config[:node_name] = ChefDelivery::Config.user
+  Chef::Config[:client_key] = ChefDelivery::Config.pem
+  Chef::Config[:chef_server_url] = ChefDelivery::Config.chef_server_url
+
 end
 
 def get_repo

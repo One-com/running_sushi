@@ -50,7 +50,7 @@ module ChefDelivery
     end
 
     def self.info(msg)
-      if @@level == Logger::INFO
+      if @@level <= Logger::INFO
         msg.prepend('INFO: ')
         logit(Syslog::LOG_INFO, msg)
       end

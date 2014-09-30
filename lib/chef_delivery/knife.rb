@@ -34,7 +34,6 @@ module ChefDelivery
       @port = opts[:port] || 443
       @knife = opts[:bin] || 'knife' #???
       @pem = opts[:pem] || '/etc/chef-server/admin.pem'
-      @repo_path = opts[:repo_path]
       @node_dir = opts[:node_dir]
       @role_dir = opts[:role_dir]
       @cookbook_dirs = opts[:cookbook_dirs]
@@ -47,7 +46,9 @@ module ChefDelivery
 
     def node_upload_all
       @logger.info "=== Uploading all nodes ==="
-      nodes = Dir.glob(File.join(@repo_path, @node_dir, '*.json'))
+      puts File.join(@node_dir, '*.json')
+      nodes = Dir.glob(File.join(@node_dir, '*.json'))
+      puts nodes
       upload_standard('nodes', nodes, Chef::Node)
     end
 
@@ -78,6 +79,25 @@ module ChefDelivery
         end
       end
     end
+
+    def client_upload_all
+    end
+
+    def cookbook_upload_all
+    end
+
+    def databag_upload_all
+    end
+
+    def environment_upload_all
+    end
+
+    def role_upload_all
+    end
+
+    def user_upload_all
+    end
+
 
     # def role_upload_all
     #   # TODO: use chef API
