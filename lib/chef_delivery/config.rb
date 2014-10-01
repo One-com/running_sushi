@@ -38,7 +38,7 @@ module ChefDelivery
     chef_server_url 'http://127.0.0.1:8889'
     client_path 'clients'
     cookbook_paths ['cookbooks']
-    databag_path 'databags'
+    databag_path 'data_bags'
     environment_path 'environments'
     node_path 'nodes'
     role_path 'roles'

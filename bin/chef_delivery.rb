@@ -66,24 +66,7 @@ def read_checkpoint
   File.exists?(checkpoint_path) ? File.read(checkpoint_path).strip : nil
 end
 
-def full_upload(knife)
-  ChefDelivery::Log.warn('Uploading all clients')
-  knife.client_upload_all
-  ChefDelivery::Log.warn('Uploading all cookbooks')
-  knife.cookbook_upload_all
-  ChefDelivery::Log.warn('Uploading all databags')
-  knife.databag_upload_all
-  ChefDelivery::Log.warn('Uploading all environments')
-  knife.environment_upload_all
-  ChefDelivery::Log.warn('Uploading all nodes')
-  knife.node_upload_all
-  ChefDelivery::Log.warn('Uploading all roles')
-  knife.role_upload_all
-  ChefDelivery::Log.warn('Uploading all users')
-  knife.user_upload_all
-end
-
-def partial_upload(knife, repo, checkpoint, local_head)
+def chef_upload(knife, repo, checkpoint, local_head)
   ChefDelivery::Log.warn(
     "Determing changes... from #{checkpoint} to #{local_head}"
   )
@@ -122,6 +105,8 @@ def partial_upload(knife, repo, checkpoint, local_head)
   added_roles = changeset.roles.select { |x| x.status == :modified }
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
   added_databags = changeset.databags.select { |x| x.status == :modified }
+  deleted_nodes = changeset.nodes.select { |x| x.status == :deleted }
+  added_nodes = changeset.nodes.select { |x| x.status == :modified }
 
   {
     'Added cookbooks' => added_cookbooks,
@@ -130,6 +115,8 @@ def partial_upload(knife, repo, checkpoint, local_head)
     'Deleted roles' => deleted_roles,
     'Added databags' => added_databags,
     'Deleted databags' => deleted_databags,
+    'Added nodes' => added_nodes,
+    'Deleted nodes' => deleted_nodes,
   }.each do |msg, list|
     if list
       ChefDelivery::Log.warn("#{msg}: #{list}")
@@ -142,6 +129,8 @@ def partial_upload(knife, repo, checkpoint, local_head)
   knife.role_upload(added_roles) if added_roles
   knife.databag_delete(deleted_databags) if deleted_databags
   knife.databag_upload(added_databags) if added_databags
+  knife.node_delete(deleted_nodes) if deleted_nodes
+  knife.node_upload(added_nodes) if added_nodes
 end
 
 def upload_changed(repo, checkpoint)
@@ -166,11 +155,8 @@ def upload_changed(repo, checkpoint)
     }
   )
 
-  if checkpoint
-    partial_upload(knife, repo, checkpoint, local_head)
-  else
-    full_upload(knife)
-  end
+  chef_upload(knife, repo, checkpoint, local_head)
+
   return local_head
 end
 

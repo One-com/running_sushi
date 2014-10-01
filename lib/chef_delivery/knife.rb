@@ -17,7 +17,9 @@
 require 'json'
 require 'fileutils'
 require 'digest/md5'
+require 'chef/environment'
 require 'chef/node'
+require 'chef/rode'
 require 'chef/knife/core/object_loader'
 
 module ChefDelivery
@@ -44,38 +46,52 @@ module ChefDelivery
 
     # TODO: set Chef::Log
 
-    def node_upload_all
-      @logger.info "=== Uploading all nodes ==="
-      puts File.join(@node_dir, '*.json')
-      nodes = Dir.glob(File.join(@node_dir, '*.json'))
-      puts nodes
-      upload_standard('nodes', nodes, Chef::Node)
+    def environment_upload(environments)
+      upload_standard('environments', @environment_dir, environments, Chef::Environment)
+    end
+
+    def environment_delete(environments)
+      delete_standard('environments', environments, Chef::Environment)
     end
 
     def node_upload(nodes)
-      @logger.info "=== Uploading nodes ==="
-      if nodes.any?
-        nodes = nodes.map { |x| File.join(@node_dir, "#{x.name}.json") }
-        upload_standard('nodes', nodes, Chef::Node)
-      end
-    end
-
-    def upload_standard(component_type, files, klass)
-      loader = Chef::Knife::Core::ObjectLoader.new(klass, @logger)
-      files.each do |f|
-        @logger.info "Upload from #{f}"
-        updated = loader.load_from(component_type, f)
-        updated.save
-      end
+      upload_standard('nodes', @node_dir, nodes, Chef::Node)
     end
 
     def node_delete(nodes)
-      @logger.info "=== Deleting nodes ==="
-      if nodes.any?
-        nodes.each do |node_name|
-          @logger.info "Deleting node #{node_name}"
-          node = Chef::Node.load(node_name)
-          node.destroy
+      delete_standard('nodes', nodes, Chef::Node)
+    end
+
+    def role_upload(roles)
+      upload_standard('roles', @role_dir, roles, Chef::Role)
+    end
+
+    def role_delete(roles)
+      delete_standard('roles', roles, Chef::Role)
+    end
+
+    def upload_standard(component_type, path, components, klass)
+      if components.any?
+
+        @logger.info "=== Uploading #{component_type} ==="
+        loader = Chef::Knife::Core::ObjectLoader.new(klass, @logger)
+
+        files = nodes.map { |x| File.join(path, "#{x.full_name}.json") }
+        files.each do |f|
+          @logger.info "Upload from #{f}"
+          updated = loader.load_from(component_type, f)
+          updated.save
+        end
+      end
+    end
+
+    def delete_standard(component_type, components, klass)
+      if components.any?
+        @logger.info "=== Deleting #{component_type} ==="
+        components.each do |component|
+          @logger.info "Deleting #{component.name}"
+          chef_component = klass.load(component.name)
+          chef_component.destroy
         end
       end
     end
@@ -98,6 +114,23 @@ module ChefDelivery
     def user_upload_all
     end
 
+    def cookbook_upload(cookbooks)
+    end
+
+    def cookbook_delete(cookbooks)
+    end
+
+    def databag_upload(databags)
+    end
+
+    def databag_delete(databags)
+    end
+
+    def role_upload(databags)
+    end
+
+    def role_delete(databags)
+    end
 
     # def role_upload_all
     #   # TODO: use chef API
