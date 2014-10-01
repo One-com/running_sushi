@@ -18,8 +18,10 @@ require 'json'
 require 'fileutils'
 require 'digest/md5'
 require 'chef/environment'
+require 'chef/api_client'
 require 'chef/node'
-require 'chef/rode'
+require 'chef/role'
+require 'chef/user'
 require 'chef/knife/core/object_loader'
 
 module ChefDelivery
@@ -31,15 +33,15 @@ module ChefDelivery
     def initialize(opts = {})
       @logger = opts[:logger] || nil
       @user = opts[:user] || 'admin'
-      @home = opts[:home] || ENV['HOME'] #???
       @host = opts[:host] || 'localhost'
       @port = opts[:port] || 443
-      @knife = opts[:bin] || 'knife' #???
       @pem = opts[:pem] || '/etc/chef-server/admin.pem'
-      @node_dir = opts[:node_dir]
-      @role_dir = opts[:role_dir]
+      @client_dir = opts[:client_dir]
       @cookbook_dirs = opts[:cookbook_dirs]
       @databag_dir = opts[:databag_dir]
+      @environment_dir = opts[:environment_dir]
+      @node_dir = opts[:node_dir]
+      @role_dir = opts[:role_dir]
       @checksum_dir = opts[:checksum_dir]
       # TODO: Add environments, nodes and clients
     end
@@ -52,6 +54,14 @@ module ChefDelivery
 
     def environment_delete(environments)
       delete_standard('environments', environments, Chef::Environment)
+    end
+
+    def client_upload(clients)
+      upload_standard('clients', @client_dir, clients, Chef::ApiClient)
+    end
+
+    def client_delete(clients)
+      delete_standard('clients', clients, Chef::ApiClient)
     end
 
     def node_upload(nodes)
@@ -70,13 +80,21 @@ module ChefDelivery
       delete_standard('roles', roles, Chef::Role)
     end
 
+    def user_upload(users)
+      upload_standard('users', @user_dir, users, Chef::User)
+    end
+
+    def user_delete(users)
+      delete_standard('users', users, Chef::User)
+    end
+
     def upload_standard(component_type, path, components, klass)
       if components.any?
 
         @logger.info "=== Uploading #{component_type} ==="
         loader = Chef::Knife::Core::ObjectLoader.new(klass, @logger)
 
-        files = nodes.map { |x| File.join(path, "#{x.full_name}.json") }
+        files = components.map { |x| File.join(path, "#{x.full_name}.json") }
         files.each do |f|
           @logger.info "Upload from #{f}"
           updated = loader.load_from(component_type, f)
