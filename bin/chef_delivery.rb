@@ -100,13 +100,13 @@ def chef_upload(knife, repo, checkpoint, local_head)
   end
 
   deleted_cookbooks = changeset.cookbooks.select { |x| x.status == :deleted }
-  added_cookbooks = changeset.cookbooks.select { |x| x.status == :modified }
-  deleted_roles = changeset.roles.select { |x| x.status == :deleted }
-  added_roles = changeset.roles.select { |x| x.status == :modified }
+  added_cookbooks = changeset.cookbooks.select { |x| x.status == :modified or x.status == :created}
+  deleted_roles = changeset.roles.select { |x| x.status == :deleted}
+  added_roles = changeset.roles.select { |x| x.status == :modified  or x.status == :created}
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
-  added_databags = changeset.databags.select { |x| x.status == :modified }
+  added_databags = changeset.databags.select { |x| x.status == :modified or x.status == :created}
   deleted_nodes = changeset.nodes.select { |x| x.status == :deleted }
-  added_nodes = changeset.nodes.select { |x| x.status == :modified }
+  added_nodes = changeset.nodes.select { |x| x.status == :modified or x.status == :created}
 
   {
     'Added cookbooks' => added_cookbooks,

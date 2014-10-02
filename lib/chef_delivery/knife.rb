@@ -19,6 +19,8 @@ require 'fileutils'
 require 'digest/md5'
 require 'chef/environment'
 require 'chef/api_client'
+require 'chef/data_bag'
+require 'chef/data_bag_item'
 require 'chef/node'
 require 'chef/role'
 require 'chef/user'
@@ -97,7 +99,7 @@ module ChefDelivery
         files = components.map { |x| File.join(path, "#{x.full_name}.json") }
         files.each do |f|
           @logger.info "Upload from #{f}"
-          updated = loader.load_from(component_type, f)
+          updated = loader.object_from_file(f)
           updated.save
         end
       end
@@ -114,22 +116,35 @@ module ChefDelivery
       end
     end
 
-    def client_upload_all
+    def databag_upload(databags)
+      if databags.any?
+        @logger.info '=== Uploading databags ==='
+        databags.group_by { |x| x.name }.each do |dbname, dbs|
+          create_databag_if_missing(dbname)
+          dbs.map do |x|
+            @logger.info "Upload #{dbname} #{x.item}"
+            db_item = File.join(@databag_dir, dbname, "#{x.item}.json")
+            loader = Chef::Knife::Core::ObjectLoader.new(Chef::DataBagItem, @logger)
+            chef_db_item_json = loader.object_from_file(db_item)
+            chef_db_item = Chef::DataBagItem.new
+            chef_db_item.data_bag(dbname)
+            chef_db_item.raw_data = chef_db_item_json
+            chef_db_item.save
+          end
+        end
+      end
     end
 
-    def cookbook_upload_all
-    end
-
-    def databag_upload_all
-    end
-
-    def environment_upload_all
-    end
-
-    def role_upload_all
-    end
-
-    def user_upload_all
+    def create_databag_if_missing(databag)
+      begin
+        chef_databag = Chef::DataBag.load(databag)
+      rescue Net::HTTPServerException => e
+        raise e unless e.response.code == "404"
+        @logger.info "=== Creating databag #{databag} ==="
+        chef_databag = Chef::DataBag.new()
+        chef_databag.name(databag)
+        chef_databag.save
+      end
     end
 
     def cookbook_upload(cookbooks)
@@ -138,16 +153,7 @@ module ChefDelivery
     def cookbook_delete(cookbooks)
     end
 
-    def databag_upload(databags)
-    end
-
     def databag_delete(databags)
-    end
-
-    def role_upload(databags)
-    end
-
-    def role_delete(databags)
     end
 
     # def role_upload_all
