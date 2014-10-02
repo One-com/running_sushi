@@ -45,7 +45,6 @@ module ChefDelivery
       @node_dir = opts[:node_dir]
       @role_dir = opts[:role_dir]
       @checksum_dir = opts[:checksum_dir]
-      # TODO: Add environments, nodes and clients
     end
 
     # TODO: set Chef::Log
@@ -141,9 +140,40 @@ module ChefDelivery
       rescue Net::HTTPServerException => e
         raise e unless e.response.code == "404"
         @logger.info "=== Creating databag #{databag} ==="
-        chef_databag = Chef::DataBag.new()
+        chef_databag = Chef::DataBag.new
         chef_databag.name(databag)
         chef_databag.save
+      end
+    end
+
+    def databag_delete(databags)
+      if databags.any?
+        @logger.info '=== Deleting databag items ==='
+        databags.group_by { |x| x.name }.each do |dbname, dbs|
+          dbs.map do |x|
+            @logger.info "Delete #{dbname} #{x.item}"
+            begin
+              chef_db_item = Chef::DataBagItem.load(dbname, x.item)
+              chef_db_item.destroy(dbname, x.item)
+            rescue Net::HTTPServerException => e
+              raise e unless e.response.code == "404"
+              @logger.info "#{x.item} not found. Cannot delete"
+            end
+          end
+          delete_databag_if_empty(dbname)
+        end
+      end
+    end
+
+    def delete_databag_if_empty(databag)
+      @logger.info "Deleting empty databag #{databag}"
+      chef_databag = Chef::DataBag.new
+      chef_databag.name(databag)
+      begin
+        chef_databag.destroy
+      rescue Net::HTTPServerException => e
+        raise e unless e.response.code == "404"
+        @logger.info "#{data_bag} not found. Cannot delete"
       end
     end
 
@@ -151,9 +181,6 @@ module ChefDelivery
     end
 
     def cookbook_delete(cookbooks)
-    end
-
-    def databag_delete(databags)
     end
 
     # def role_upload_all
