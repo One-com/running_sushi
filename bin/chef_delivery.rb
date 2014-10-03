@@ -143,6 +143,8 @@ def upload_changed(repo, checkpoint)
       :logger => ChefDelivery::Log,
       :config => ChefDelivery::Config.knife_config,
       :bin => ChefDelivery::Config.knife_bin,
+      :master_path => ChefDelivery::Config.master_path,
+      :base_dir => base_dir,
       :client_dir => File.join(base_dir, ChefDelivery::Config.client_path),
       :cookbook_dirs => ChefDelivery::Config.cookbook_paths.map do |x|
         File.join(base_dir, x)

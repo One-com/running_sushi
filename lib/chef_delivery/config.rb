@@ -44,8 +44,6 @@ module ChefDelivery
     role_path 'roles'
     user_path 'users'
     rev_checkpoint 'chef_delivery_revision'
-    knife_config '/root/.chef/knife.rb'
-    knife_bin '/opt/chef/bin/knife'
     vcs_type 'git'
     vcs_path nil
     plugin_path '/etc/chef_delivery_plugin.rb'

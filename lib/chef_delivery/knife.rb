@@ -25,6 +25,20 @@ require 'chef/node'
 require 'chef/role'
 require 'chef/user'
 require 'chef/knife/core/object_loader'
+require 'chef/knife/cookbook_upload'
+
+# Monkey patching knife
+class Chef
+  class Knife
+    class CookbookUpload < Knife
+
+      # Disable dependency check on cookbook upload
+      def check_for_dependencies!(cookbook)
+      end
+
+    end
+  end
+end
 
 module ChefDelivery
   # Knife does not have a usable API for using it as a lib
@@ -45,6 +59,8 @@ module ChefDelivery
       @node_dir = opts[:node_dir]
       @role_dir = opts[:role_dir]
       @checksum_dir = opts[:checksum_dir]
+      @master_path = opts[:master_path]
+      @base_dir = opts[:base_dir]
     end
 
     # TODO: set Chef::Log
@@ -178,6 +194,45 @@ module ChefDelivery
     end
 
     def cookbook_upload(cookbooks)
+      if cookbooks.any?
+        @logger.info '=== Uploading cookbooks ==='
+        cookbooks.each do |cb|
+          @logger.info " Uploading #{cb} "
+
+          # Handle versioned tagged cookbook dirs
+          re = %r{^v(\d)+\.(\d)+\.(\d)+}
+          name_parts = cb.name.split('-')
+          if name_parts[-1].match(re)
+            cb_name = name_parts[0..-2].join('-')
+          else
+            cb_name = cb.name
+          end
+
+          # Work around for knife deriving coobook name from dirname
+          work_dir = File.join(@master_path, 'cb_work')
+          puts "creating #{work_dir}"
+          FileUtils.mkpath(work_dir)
+          full_cb_work_path = File.join(work_dir, cb_name)
+          full_cb_path = File.join(@base_dir, cb.cookbook_dir, cb.name)
+
+          begin
+            puts "symlinking #{full_cb_work_path}"
+            File.symlink(full_cb_path, full_cb_work_path)
+
+            # Upload cookbook
+            cbu = Chef::Knife::CookbookUpload.new
+            Chef::Knife::CookbookUpload.load_deps
+            cbu.ui = @logger
+            cbu.name_args = [cb_name]
+            puts "cbu.name_args: #{cbu.name_args}"
+            cbu.config[:cookbook_path] = work_dir
+            cbu.run
+
+          ensure
+            File.unlink(full_cb_work_path)
+          end
+        end
+      end
     end
 
     def cookbook_delete(cookbooks)
