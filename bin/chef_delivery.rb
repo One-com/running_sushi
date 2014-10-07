@@ -1,21 +1,21 @@
 #!/opt/chef/embedded/bin/ruby
+# Encoding: utf-8
 # vim: syntax=ruby:expandtab:shiftwidth=2:softtabstop=2:tabstop=2
 
 # Copyright 2013-present Facebook
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'chef_diff/util'
 require 'chef_diff/repo/svn'
 require 'chef_diff/repo/git'
 require 'chef_diff/changeset'
@@ -77,22 +77,20 @@ def chef_upload(knife, repo, checkpoint, local_head)
       repo,
       checkpoint,
       local_head,
-      {
-        :cookbook_dirs =>
-          ChefDelivery::Config.cookbook_paths,
-        :client_dir =>
-          ChefDelivery::Config.client_paths,
-        :databag_dir =>
-          ChefDelivery::Config.databag_path,
-        :environment_dir =>
-          ChefDelivery::Config.environment_path,
-        :node_dir =>
-          ChefDelivery::Config.node_path,
-        :role_dir =>
-          ChefDelivery::Config.role_path,
-        :user_dir =>
-          ChefDelivery::Config.user_path,
-      },
+      cookbook_dirs:
+        ChefDelivery::Config.cookbook_paths,
+      client_dir:
+        ChefDelivery::Config.client_paths,
+      databag_dir:
+        ChefDelivery::Config.databag_path,
+      environment_dir:
+        ChefDelivery::Config.environment_path,
+      node_dir:
+        ChefDelivery::Config.node_path,
+      role_dir:
+        ChefDelivery::Config.role_path,
+      user_dir:
+        ChefDelivery::Config.user_path,
     )
   rescue ChefDiff::Changeset::ReferenceError
     ChefDelivery::Log.error('Repo error, invalid revision, exiting')
@@ -100,13 +98,21 @@ def chef_upload(knife, repo, checkpoint, local_head)
   end
 
   deleted_cookbooks = changeset.cookbooks.select { |x| x.status == :deleted }
-  added_cookbooks = changeset.cookbooks.select { |x| x.status == :modified or x.status == :created}
-  deleted_roles = changeset.roles.select { |x| x.status == :deleted}
-  added_roles = changeset.roles.select { |x| x.status == :modified  or x.status == :created}
+  added_cookbooks = changeset.cookbooks.select do |x|
+    x.status == :modified || x.status == :created
+  end
+  deleted_roles = changeset.roles.select { |x| x.status == :deleted }
+  added_roles = changeset.roles.select do |x|
+    x.status == :modified  || x.status == :created
+  end
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
-  added_databags = changeset.databags.select { |x| x.status == :modified or x.status == :created}
+  added_databags = changeset.databags.select do
+    |x| x.status == :modified || x.status == :created
+  end
   deleted_nodes = changeset.nodes.select { |x| x.status == :deleted }
-  added_nodes = changeset.nodes.select { |x| x.status == :modified or x.status == :created}
+  added_nodes = changeset.nodes.select do |x|
+    x.status == :modified || x.status == :created
+  end
 
   {
     'Added cookbooks' => added_cookbooks,
@@ -118,9 +124,7 @@ def chef_upload(knife, repo, checkpoint, local_head)
     'Added nodes' => added_nodes,
     'Deleted nodes' => deleted_nodes,
   }.each do |msg, list|
-    if list
-      ChefDelivery::Log.warn("#{msg}: #{list}")
-    end
+    ChefDelivery::Log.warn("#{msg}: #{list}") if list
   end
 
   knife.cookbook_delete(deleted_cookbooks) if deleted_cookbooks
@@ -139,27 +143,26 @@ def upload_changed(repo, checkpoint)
                        ChefDelivery::Config.reponame)
 
   knife = ChefDelivery::Knife.new(
-    {
-      :logger => ChefDelivery::Log,
-      :config => ChefDelivery::Config.knife_config,
-      :bin => ChefDelivery::Config.knife_bin,
-      :master_path => ChefDelivery::Config.master_path,
-      :base_dir => base_dir,
-      :client_dir => File.join(base_dir, ChefDelivery::Config.client_path),
-      :cookbook_dirs => ChefDelivery::Config.cookbook_paths.map do |x|
+      logger: ChefDelivery::Log,
+      config: ChefDelivery::Config.knife_config,
+      bin: ChefDelivery::Config.knife_bin,
+      master_path: ChefDelivery::Config.master_path,
+      base_dir: base_dir,
+      client_dir: File.join(base_dir, ChefDelivery::Config.client_path),
+      cookbook_dirs: ChefDelivery::Config.cookbook_paths.map do |x|
         File.join(base_dir, x)
       end,
-      :databag_dir => File.join(base_dir, ChefDelivery::Config.databag_path),
-      :environment_dir => File.join(base_dir, ChefDelivery::Config.environment_path),
-      :node_dir => File.join(base_dir, ChefDelivery::Config.node_path),
-      :role_dir => File.join(base_dir, ChefDelivery::Config.role_path),
-      :user_dir => File.join(base_dir, ChefDelivery::Config.user_path),
-    }
+      databag_dir: File.join(base_dir, ChefDelivery::Config.databag_path),
+      environment_dir: File.join(base_dir,
+                                 ChefDelivery::Config.environment_path),
+      node_dir: File.join(base_dir, ChefDelivery::Config.node_path),
+      role_dir: File.join(base_dir, ChefDelivery::Config.role_path),
+      user_dir: File.join(base_dir, ChefDelivery::Config.user_path)
   )
 
   chef_upload(knife, repo, checkpoint, local_head)
 
-  return local_head
+  local_head
 end
 
 def setup_config
@@ -205,23 +208,20 @@ def setup_config
   ChefDelivery::Hooks.get(ChefDelivery::Config.plugin_path)
   at_exit do
     ChefDelivery::Hooks.atexit(ChefDelivery::Config.dry_run,
-                                  $success, $status_msg)
+                               $success, $status_msg)
   end
 
   Chef::Config[:node_name] = ChefDelivery::Config.user
   Chef::Config[:client_key] = ChefDelivery::Config.pem
   Chef::Config[:chef_server_url] = ChefDelivery::Config.chef_server_url
-
 end
 
 def get_repo
   repo_path = File.join(ChefDelivery::Config.master_path,
                         ChefDelivery::Config.reponame)
   r = ChefDiff::Repo.get(ChefDelivery::Config.vcs_type, repo_path,
-                             ChefDelivery::Log)
-  if ChefDelivery::Config.vcs_path
-    r.bin = ChefDelivery::Config.vcs_path
-  end
+                         ChefDelivery::Log)
+  r.bin = ChefDelivery::Config.vcs_path if ChefDelivery::Config.vcs_path
   r
 end
 
@@ -258,7 +258,7 @@ if ChefDelivery::Config.dry_run && !repo.exists?
     'In dryrun mode, with no repo, there\'s not much I can dryrun'
   )
   ChefDelivery::Hooks.postrun(ChefDelivery::Config.dry_run, true,
-                                 'dryrun mode')
+                              'dryrun mode')
   exit
 end
 
@@ -283,5 +283,5 @@ end
 
 ChefDelivery::Log.warn($status_msg)
 ChefDelivery::Hooks.postrun(ChefDelivery::Config.dry_run, $success,
-                               $status_msg)
+                            $status_msg)
 # rubocop:enable GlobalVars
