@@ -28,7 +28,6 @@ require 'chef/user'
 require 'chef/knife/core/object_loader'
 require 'chef/knife/cookbook_delete'
 require 'chef/cookbook/cookbook_version_loader'
-require 'chef/cookbook/metadata'
 require 'chef/cookbook_uploader'
 
 module ChefDelivery
@@ -52,8 +51,6 @@ module ChefDelivery
       @master_path = opts[:master_path]
       @base_dir = opts[:base_dir]
     end
-
-    # TODO: set Chef::Log
 
     def environment_upload(environments)
       upload_standard('environments', @environment_dir, environments,
@@ -97,9 +94,11 @@ module ChefDelivery
     end
 
     def upload_standard(component_type, path, components, klass)
+      # Handle upload using Chef objects
       if components.any?
 
         @logger.info "=== Uploading #{component_type} ==="
+        # Instatiate object using knife factory
         loader = Chef::Knife::Core::ObjectLoader.new(klass, @logger)
 
         files = components.map { |x| File.join(path, "#{x.full_name}.json") }
@@ -112,6 +111,7 @@ module ChefDelivery
     end
 
     def delete_standard(component_type, components, klass)
+      # Handle delete using Chef objects
       if components.any?
         @logger.info "=== Deleting #{component_type} ==="
         components.each do |component|
@@ -123,6 +123,8 @@ module ChefDelivery
     end
 
     def databag_upload(databags)
+      # Databag upload special handling
+      # Load pattern for databags does not follow standard
       if databags.any?
         @logger.info '=== Uploading databags ==='
         databags.group_by { |x| x.name }.each do |dbname, dbs|
@@ -184,6 +186,7 @@ module ChefDelivery
     end
 
     def cookbook_upload(cookbooks)
+      # Upload cookbooks using Chef cookbook uploader
       if cookbooks.any?
         @logger.info '=== Uploading cookbooks ==='
         cookbooks.each do |cb|
@@ -209,10 +212,10 @@ module ChefDelivery
     end
 
     def cookbook_delete(cookbooks)
+      # Delete cookbooks using knife
       if cookbooks.any?
         @logger.info '=== Deleting cookbooks ==='
 
-        # Delete cookbooks using knife interface
         cookbooks.each do |cb|
           @logger.info " Deleting #{cb}"
           cb_name, cb_version = cookbook_info(cb)
