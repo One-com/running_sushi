@@ -25,20 +25,10 @@ require 'chef/node'
 require 'chef/role'
 require 'chef/user'
 require 'chef/knife/core/object_loader'
-require 'chef/knife/cookbook_upload'
-
-# Monkey patching knife
-class Chef
-  class Knife
-    class CookbookUpload < Knife
-
-      # Disable dependency check on cookbook upload
-      def check_for_dependencies!(cookbook)
-      end
-
-    end
-  end
-end
+require 'chef/knife/cookbook_delete'
+require 'chef/cookbook/cookbook_version_loader'
+require 'chef/cookbook/metadata'
+require 'chef/cookbook_uploader'
 
 module ChefDelivery
   # Knife does not have a usable API for using it as a lib
@@ -197,154 +187,76 @@ module ChefDelivery
       if cookbooks.any?
         @logger.info '=== Uploading cookbooks ==='
         cookbooks.each do |cb|
-          @logger.info " Uploading #{cb} "
+          @logger.info " Uploading #{cb}"
 
-          # Handle versioned tagged cookbook dirs
-          re = %r{^v(\d)+\.(\d)+\.(\d)+}
-          name_parts = cb.name.split('-')
-          if name_parts[-1].match(re)
-            cb_name = name_parts[0..-2].join('-')
-          else
-            cb_name = cb.name
-          end
-
-          # Work around for knife deriving coobook name from dirname
-          work_dir = File.join(@master_path, 'cb_work')
-          puts "creating #{work_dir}"
-          FileUtils.mkpath(work_dir)
-          full_cb_work_path = File.join(work_dir, cb_name)
+          # Load cookbook
           full_cb_path = File.join(@base_dir, cb.cookbook_dir, cb.name)
+          cb_version_loader = Chef::Cookbook::CookbookVersionLoader.new(full_cb_path)
+          cb_version_loader.load_cookbooks
 
-          begin
-            puts "symlinking #{full_cb_work_path}"
-            File.symlink(full_cb_path, full_cb_work_path)
+          # Handle versioned tagged cookbook by extracting name from cookbook dir
+          # Currently (Chef 11) Knife uses dir name as cookbook name
+          cb_name, _ = cookbook_info(cb)
+          cb_version_loader.instance_variable_set(:@cookbook_name, cb_name)
+          cb_version = cb_version_loader.cookbook_version
+          chef_cb_uploader = Chef::CookbookUploader.new(cb_version, {})
+          chef_cb_uploader.upload_cookbooks
 
-            # Upload cookbook
-            cbu = Chef::Knife::CookbookUpload.new
-            Chef::Knife::CookbookUpload.load_deps
-            cbu.ui = @logger
-            cbu.name_args = [cb_name]
-            puts "cbu.name_args: #{cbu.name_args}"
-            cbu.config[:cookbook_path] = work_dir
-            cbu.run
-
-          ensure
-            File.unlink(full_cb_work_path)
-          end
         end
       end
     end
 
     def cookbook_delete(cookbooks)
+      if cookbooks.any?
+        @logger.info '=== Deleting cookbooks ==='
+
+        # Delete cookbooks using knife interface
+        cookbooks.each do |cb|
+          @logger.info " Deleting #{cb}"
+          cb_name, cb_version = cookbook_info(cb)
+          chef_cb_deleter = Chef::Knife::CookbookDelete.new
+          Chef::Knife::CookbookDelete.load_deps
+          chef_cb_deleter.config[:purge] = true
+          chef_cb_deleter.cookbook_name = cb_name
+
+          begin
+
+            if cb_version
+              @logger.info " Deleting #{cb_version}"
+              chef_cb_deleter.delete_version_without_confirmation(cb_version)
+            else
+              @logger.info " Deleting all"
+              chef_cb_deleter.delete_all_without_confirmation
+            end
+
+          rescue Net::HTTPServerException => e
+            raise e unless e.response.code == "404"
+            @logger.info "#{cb_name} #{cb_version} not found. Cannot delete"
+          end
+        end
+
+      end
+
     end
 
-    # def role_upload_all
-    #   # TODO: use chef API
-    #   roles = File.join(@role_dir, '*.rb')
-    #   exec!("#{@knife} role from file #{roles} -c #{@config}", @logger)
-    # end
+    def cookbook_info(cookbook)
 
-    # def role_upload(roles)
-    #   # TODO: use chef API
-    #   if roles.any?
-    #     roles = roles.map { |x| File.join(@role_dir, "#{x.name}.rb") }.join(' ')
-    #     exec!("#{@knife} role from file #{roles} -c #{@config}", @logger)
-    #   end
-    # end
+      # Handle versioned tagged cookbook dirs
+      # Format: "cookbook-name-vx.y.z"
+      re = %r{^v((\d+)\.(\d+)\.(\d+))}
+      name_parts = cookbook.name.split('-')
+      m = name_parts[-1].match(re)
+      if m
+        name = name_parts[0..-2].join('-')
+        version = m[1]
+      else
+        name = cookbook.name
+        version = nil
+      end
 
-    # def role_delete(roles)
-    #   # TODO: use knife API
-    #   if roles.any?
-    #     roles.each do |role|
-    #       exec!(
-    #         "#{@knife} role delete #{role.name} --yes -c #{@config}", @logger
-    #       )
-    #     end
-    #   end
-    # end
+      return name, version
 
-    # def cookbook_upload_all
-    #   # TODO: use knife API
-    #   exec!("#{@knife} cookbook upload -a -c #{@config}", @logger)
-    # end
+    end
 
-    # def cookbook_upload(cookbooks)
-    #   # TODO: use knife API
-    #   if cookbooks.any?
-    #     cookbooks = cookbooks.map { |x| x.name }.join(' ')
-    #     exec!("#{@knife} cookbook upload #{cookbooks} -c #{@config}", @logger)
-    #   end
-    # end
-
-    # def cookbook_delete(cookbooks)
-    #   # TODO: use knife API
-    #   if cookbooks.any?
-    #     cookbooks.each do |cookbook|
-    #       exec!("#{@knife} cookbook delete #{cookbook.name}" +
-    #               " --purge --yes -c #{@config}", @logger)
-    #     end
-    #   end
-    # end
-
-    # def databag_upload_all
-    #   glob = File.join(@databag_dir, '*', '*.json')
-    #   items = Dir.glob(glob).map do |file|
-    #     BetweenMeals::Changes::Databag.new(
-    #       { :status => :modified, :path => file }, @databag_dir
-    #     )
-    #   end
-    #   databag_upload(items)
-    # end
-
-    # def databag_upload(databags)
-    #   # TODO: use knife API
-    #   if databags.any?
-    #     databags.group_by { |x| x.name }.each do |dbname, dbs|
-    #       create_databag_if_missing(dbname)
-    #       dbitems = dbs.map do |x|
-    #         File.join(@databag_dir, dbname, "#{x.item}.json")
-    #       end.join(' ')
-    #       exec!("#{@knife} data bag from file #{dbname} #{dbitems}", @logger)
-    #     end
-    #   end
-    # end
-
-    # def databag_delete(databags)
-    #   # TODO: use knife API
-    #   if databags.any?
-    #     databags.group_by { |x| x.name }.each do |dbname, dbs|
-    #       dbs.each do |db|
-    #         exec!("#{@knife} data bag delete #{dbname} #{db.item}" +
-    #                 " --yes -c #{@config}", @logger)
-    #       end
-    #       delete_databag_if_empty(dbname)
-    #     end
-    #   end
-    # end
-
-    # private
-
-    # def create_databag_if_missing(databag)
-    #   # TODO: use knife API
-    #   s = Mixlib::ShellOut.new("#{@knife} data bag list" +
-    #                            " --format json -c #{@config}").run_command
-    #   s.error!
-    #   db = JSON.load(s.stdout)
-    #   unless db.include?(databag)
-    #     exec!("#{@knife} data bag create #{databag} -c #{@config}", @logger)
-    #   end
-    # end
-
-    # def delete_databag_if_empty(databag)
-    #   # TODO: use knife API
-    #   s = Mixlib::ShellOut.new("#{@knife} data bag show #{databag}" +
-    #                            " --format json -c #{@config}").run_command
-    #   s.error!
-    #   db = JSON.load(s.stdout)
-    #   if db.empty?
-    #     exec!("#{@knife} data bag delete #{databag} --yes -c #{@config}",
-    #           @logger)
-    #   end
-    # end
   end
 end
