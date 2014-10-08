@@ -36,7 +36,7 @@ module ChefDelivery
     reponame 'ops'
     user 'admin'
     pem '/etc/chef-server/admin.pem'
-    chef_server_url 'http://127.0.0.1:8889'
+    chef_server_url 'https://127.0.0.1'
     client_path 'clients'
     cookbook_paths ['cookbooks']
     databag_path 'data_bags'
