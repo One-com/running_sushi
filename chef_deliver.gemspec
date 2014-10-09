@@ -8,7 +8,7 @@ Gem::Specification.new do |s|
   s.extra_rdoc_files = ['README.md', 'LICENSE']
   s.files = %w{README.md LICENSE} + Dir.glob("lib/chef_delivery/*.rb") +
     Dir.glob("bin/*")
-  s.executables = 'chef_delivery.rb'
+  s.executables = 'chef-delivery'
   s.license = 'Apache'
   %w{
     mixlib-config
