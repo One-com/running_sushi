@@ -28,7 +28,7 @@ module ChefDelivery
     dry_run false
     verbosity Logger::WARN
     timestamp false
-    config_file '/etc/chef_delivery_config.rb'
+    config_file '/etc/chef/chef_delivery_config.rb'
     pidfile '/var/run/chef_delivery.pid'
     lockfile '/var/lock/chef_delivery'
     master_path '/var/chef/chef_delivery_work'
