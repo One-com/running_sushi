@@ -16,8 +16,10 @@
 # limitations under the License.
 
 require 'json'
+require 'ffi_yajl'
 require 'fileutils'
 require 'digest/md5'
+require 'securerandom'
 require 'chef/environment'
 require 'chef/api_client'
 require 'chef/data_bag'
@@ -47,9 +49,14 @@ module ChefDelivery
       @environment_dir = opts[:environment_dir]
       @node_dir = opts[:node_dir]
       @role_dir = opts[:role_dir]
+      @user_dir = opts[:user_dir]
       @checksum_dir = opts[:checksum_dir]
       @master_path = opts[:master_path]
       @base_dir = opts[:base_dir]
+    end
+
+    def http_api
+      Chef::REST.new(Chef::Config[:chef_server_url])
     end
 
     def environment_upload(environments)
@@ -62,7 +69,22 @@ module ChefDelivery
     end
 
     def client_upload(clients)
-      upload_standard('clients', @client_dir, clients, Chef::ApiClient)
+      files = clients.map { |x| File.join(@client_dir, "#{x.full_name}.json") }
+      files.each do |f|
+        @logger.info "Upload from #{f}"
+        r = FFI_Yajl::Parser.parse(IO.read(f))
+        client_name = r['name']
+        begin
+          # Try updating client
+          http_api.put_rest("clients/#{client_name}", r)
+          @logger.info "Updated #{client_name}"
+        rescue Net::HTTPServerException => e
+          raise e unless e.response.code == '404'
+          @logger.info "Creating #{client_name}"
+          # Client not found. Try creating
+          http_api.post_rest('clients', r)
+        end
+      end
     end
 
     def client_delete(clients)
@@ -86,7 +108,25 @@ module ChefDelivery
     end
 
     def user_upload(users)
-      upload_standard('users', @user_dir, users, Chef::User)
+      files = users.map { |x| File.join(@user_dir, "#{x.full_name}.json") }
+      files.each do |f|
+        @logger.info "Upload from #{f}"
+        r = FFI_Yajl::Parser.parse(IO.read(f))
+        user_name = r['name']
+        begin
+          # Try updating user
+          http_api.put_rest("users/#{user_name}", r)
+          @logger.info "Updated #{user_name}"
+        rescue Net::HTTPServerException => e
+          raise e unless e.response.code == '404'
+          @logger.info "Creating #{user_name}"
+          if !r.has_key?('password')
+            r['password'] = SecureRandom.hex[0..7]
+          end
+          # User not found. Try creating
+          http_api.post_rest('users', r)
+        end
+      end
     end
 
     def user_delete(users)

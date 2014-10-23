@@ -80,7 +80,7 @@ def chef_upload(knife, repo, checkpoint, local_head)
       cookbook_dirs:
         ChefDelivery::Config.cookbook_paths,
       client_dir:
-        ChefDelivery::Config.client_paths,
+        ChefDelivery::Config.client_path,
       databag_dir:
         ChefDelivery::Config.databag_path,
       environment_dir:
@@ -113,6 +113,18 @@ def chef_upload(knife, repo, checkpoint, local_head)
   added_nodes = changeset.nodes.select do |x|
     x.status == :modified || x.status == :created
   end
+  deleted_environments = changeset.environments.select { |x| x.status == :deleted }
+  added_environments = changeset.environments.select do |x|
+    x.status == :modified || x.status == :created
+  end
+  deleted_users = changeset.users.select { |x| x.status == :deleted }
+  added_users = changeset.users.select do |x|
+    x.status == :modified || x.status == :created
+  end
+  deleted_clients = changeset.clients.select { |x| x.status == :deleted }
+  added_clients = changeset.clients.select do |x|
+    x.status == :modified || x.status == :created
+  end
 
   {
     'Added cookbooks' => added_cookbooks,
@@ -123,6 +135,12 @@ def chef_upload(knife, repo, checkpoint, local_head)
     'Deleted databags' => deleted_databags,
     'Added nodes' => added_nodes,
     'Deleted nodes' => deleted_nodes,
+    'Added environments' => added_environments,
+    'Deleted environments' => deleted_environments,
+    'Added users' => added_users,
+    'Deleted users' => deleted_users,
+    'Added clients' => added_clients,
+    'Deleted clients' => deleted_clients,
   }.each do |msg, list|
     ChefDelivery::Log.warn("#{msg}: #{list}") if list
   end
@@ -135,6 +153,12 @@ def chef_upload(knife, repo, checkpoint, local_head)
   knife.databag_upload(added_databags) if added_databags
   knife.node_delete(deleted_nodes) if deleted_nodes
   knife.node_upload(added_nodes) if added_nodes
+  knife.environment_delete(deleted_environments) if deleted_environments
+  knife.environment_upload(added_environments) if added_environments
+  knife.user_delete(deleted_users) if deleted_users
+  knife.user_upload(added_users) if added_users
+  knife.client_delete(deleted_clients) if deleted_clients
+  knife.client_upload(added_clients) if added_clients
 end
 
 def upload_changed(repo, checkpoint)
