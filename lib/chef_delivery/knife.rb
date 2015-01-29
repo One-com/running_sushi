@@ -156,8 +156,13 @@ module ChefDelivery
         @logger.info "=== Deleting #{component_type} ==="
         components.each do |component|
           @logger.info "Deleting #{component.name}"
-          chef_component = klass.load(component.name)
-          chef_component.destroy
+          begin
+            chef_component = klass.load(component.name)
+            chef_component.destroy
+          rescue Net::HTTPServerException => e
+            raise e unless e.response.code == '404'
+            @logger.info "#{component_type} #{component.name} not found. Cannot delete"
+          end
         end
       end
     end

@@ -34,6 +34,7 @@ module ChefDelivery
     master_path '/var/chef/chef_delivery_work'
     repo_url nil
     reponame 'ops'
+    pod_name nil
     user 'admin'
     pem '/etc/chef-server/admin.pem'
     chef_server_url 'https://127.0.0.1'

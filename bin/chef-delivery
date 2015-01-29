@@ -166,20 +166,29 @@ def upload_changed(repo, checkpoint)
   base_dir = File.join(ChefDelivery::Config.master_path,
                        ChefDelivery::Config.reponame)
 
+  node_dir = File.join(base_dir, ChefDelivery::Config.node_path)
+  client_dir = File.join(base_dir, ChefDelivery::Config.client_path)
+  environment_dir = File.join(base_dir, ChefDelivery::Config.environment_path)
+
+  if ChefDelivery::Config.pod_name
+    node_dir = File.join(node_dir, ChefDelivery::Config.pod_name.to_s)
+    client_dir = File.join(client_dir, ChefDelivery::Config.pod_name.to_s)
+    environment_dir = File.join(environment_dir, ChefDelivery::Config.pod_name.to_s)
+  end
+
   knife = ChefDelivery::Knife.new(
       logger: ChefDelivery::Log,
       config: ChefDelivery::Config.knife_config,
       bin: ChefDelivery::Config.knife_bin,
       master_path: ChefDelivery::Config.master_path,
       base_dir: base_dir,
-      client_dir: File.join(base_dir, ChefDelivery::Config.client_path),
+      client_dir: client_dir,
       cookbook_dirs: ChefDelivery::Config.cookbook_paths.map do |x|
         File.join(base_dir, x)
       end,
       databag_dir: File.join(base_dir, ChefDelivery::Config.databag_path),
-      environment_dir: File.join(base_dir,
-                                 ChefDelivery::Config.environment_path),
-      node_dir: File.join(base_dir, ChefDelivery::Config.node_path),
+      environment_dir: environment_dir,
+      node_dir: node_dir,
       role_dir: File.join(base_dir, ChefDelivery::Config.role_path),
       user_dir: File.join(base_dir, ChefDelivery::Config.user_path)
   )
