@@ -52,6 +52,10 @@ def write_pidfile
   File.write(ChefDelivery::Config.pidfile, Process.pid)
 end
 
+def delete_pidfile
+  File.delete(ChefDelivery::Config.pidfile) if File.exist?(ChefDelivery::Config.pidfile)
+end
+
 def checkpoint_path
   File.join(ChefDelivery::Config.master_path,
             ChefDelivery::Config.rev_checkpoint)
@@ -325,4 +329,5 @@ end
 ChefDelivery::Log.warn($status_msg)
 ChefDelivery::Hooks.postrun(ChefDelivery::Config.dry_run, $success,
                             $status_msg)
+delete_pidfile
 # rubocop:enable GlobalVars
