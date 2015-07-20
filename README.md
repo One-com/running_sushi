@@ -3,7 +3,7 @@
 ## Intro
 
 Welcome to Chef Delivery, software to keep cookbooks, clients, databags, environments, nodes, roles and users in
-sync between a VCS repo and a chef server. The idea is that if you have
+sync between a Git repo and a chef server. The idea is that if you have
 multiple, distinct Chef server instances that should all be identical or track a specific part of a Chef git repo, they can all run this script in cron. The script uses proper locking, so you should be
 able to run it every minute.
 
@@ -25,12 +25,12 @@ principals:
 * A Chef server tracks all cookbook, user and role dirs
 * A Chef server can track all node, client and environment dirs or just a subtree of these dirs (for segmenting infrastructure)
 * Everything you care about comes from version control
-* All files in the Chef repo must be JSON (except for cookbooks)
+* All files in the Chef repo must be JSON (except for cookbooks). It's recommended to use Git hooks to enforce this as Chef Delivery aborts the Chef Server upload phase if invalid JSON is encountered.
 
 ## Dependencies
 
 * Mixlib::Config
-* chef_diff
+* [chef_diff](https://github.com/One-com/chef_diff)
 
 ## Config file
 
@@ -58,7 +58,7 @@ In addition the following are also available:
 * pod_name - Name of subdir to match in environments, nodes and clients. Default: `nil` which means no filtering.
 * user - username of the Chef uploader. Default: `admin`
 * pem - Chef client key of the Chef uploader. . Default: `/etc/chef-server/admin.pem`
-* chef_server_url - URL of the Chef server to upload to. Default: `https://127.0.0.1`
+* chef\_server\_url - URL of the Chef server to upload to. Default: `https://127.0.0.1`
 * client_path A directory to find clients in relative to `reponame`. Default:
   `clients`
 * cookbook_paths - An array of directories that contain cookbooks relative to
