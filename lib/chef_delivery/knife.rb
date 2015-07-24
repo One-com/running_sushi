@@ -220,10 +220,13 @@ module ChefDelivery
     end
 
     def delete_databag_if_empty(databag)
-      @logger.info "Deleting empty databag #{databag}"
-      chef_databag = Chef::DataBag.new
-      chef_databag.name(databag)
       begin
+        if Chef::DataBag.load(databag).any?
+          return
+        end
+        @logger.info "Deleting empty databag #{databag}"
+        chef_databag = Chef::DataBag.new
+        chef_databag.name(databag)
         chef_databag.destroy
       rescue Net::HTTPServerException => e
         raise e unless e.response.code == '404'
