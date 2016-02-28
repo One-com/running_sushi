@@ -50,6 +50,7 @@ module ChefDelivery
       @environment_dir = opts[:environment_dir]
       @node_dir = opts[:node_dir]
       @role_dir = opts[:role_dir]
+      @role_local_dir = opts[:role_local_dir]
       @user_dir = opts[:user_dir]
       @checksum_dir = opts[:checksum_dir]
       @master_path = opts[:master_path]
@@ -106,6 +107,14 @@ module ChefDelivery
 
     def role_delete(roles)
       delete_standard('roles', roles, Chef::Role)
+    end
+
+    def role_local_upload(roles_local)
+      upload_standard('roles_local', @role_local_dir, roles_local, Chef::Role)
+    end
+
+    def role_local_delete(roles_local)
+      delete_standard('roles_local', roles_local, Chef::Role)
     end
 
     def user_upload(users)
