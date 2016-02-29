@@ -75,14 +75,16 @@ def get_pod_config
   node_dir = ChefDelivery::Config.node_path
   client_dir = ChefDelivery::Config.client_path
   environment_dir = ChefDelivery::Config.environment_path
+  role_local_dir = ChefDelivery::Config.role_local_path
 
   if ChefDelivery::Config.pod_name
     node_dir = File.join(node_dir, ChefDelivery::Config.pod_name.to_s)
     client_dir = File.join(client_dir, ChefDelivery::Config.pod_name.to_s)
     environment_dir = File.join(environment_dir, ChefDelivery::Config.pod_name.to_s)
+    role_local_dir = File.join(role_local_dir, ChefDelivery::Config.pod_name.to_s)
   end
 
-  return node_dir, client_dir, environment_dir
+  return node_dir, client_dir, environment_dir, role_local_dir
 end
 
 def chef_upload(knife, repo, checkpoint, local_head)
@@ -90,7 +92,7 @@ def chef_upload(knife, repo, checkpoint, local_head)
     "Determing changes... from #{checkpoint} to #{local_head}"
   )
 
-  node_dir, client_dir, environment_dir = get_pod_config
+  node_dir, client_dir, environment_dir, role_local_dir = get_pod_config
 
   begin
     changeset = ChefDiff::Changeset.new(
@@ -108,6 +110,8 @@ def chef_upload(knife, repo, checkpoint, local_head)
         environment_dir,
       node_dir:
         node_dir,
+      role_local_dir:
+        role_local_dir,
       role_dir:
         ChefDelivery::Config.role_path,
       user_dir:
@@ -126,6 +130,12 @@ def chef_upload(knife, repo, checkpoint, local_head)
   added_roles = changeset.roles.select do |x|
     x.status == :modified  || x.status == :created
   end
+
+  deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted }
+  added_roles_local = changeset.roles_local.select do |x|
+    x.status == :modified  || x.status == :created
+  end
+
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
   added_databags = changeset.databags.select do
     |x| x.status == :modified || x.status == :created
@@ -152,6 +162,8 @@ def chef_upload(knife, repo, checkpoint, local_head)
     'Deleted cookbooks' => deleted_cookbooks,
     'Added roles' => added_roles,
     'Deleted roles' => deleted_roles,
+    'Added local roles' => added_roles_local,
+    'Deleted local roles' => deleted_roles_local,
     'Added databags' => added_databags,
     'Deleted databags' => deleted_databags,
     'Added nodes' => added_nodes,
@@ -170,6 +182,10 @@ def chef_upload(knife, repo, checkpoint, local_head)
   knife.cookbook_upload(added_cookbooks) if added_cookbooks
   knife.role_delete(deleted_roles) if deleted_roles
   knife.role_upload(added_roles) if added_roles
+
+  knife.role_local_upload(deleted_roles_local) if deleted_roles_local
+  knife.role_local_upload(added_roles_local) if added_roles_local
+
   knife.databag_delete(deleted_databags) if deleted_databags
   knife.databag_upload(added_databags) if added_databags
   knife.node_delete(deleted_nodes) if deleted_nodes
@@ -187,7 +203,7 @@ def upload_changed(repo, checkpoint)
   base_dir = File.join(ChefDelivery::Config.master_path,
                        ChefDelivery::Config.reponame)
 
-  node_dir, client_dir, environment_dir = get_pod_config
+  node_dir, client_dir, environment_dir, role_local_dir = get_pod_config
 
   knife = ChefDelivery::Knife.new(
       logger: ChefDelivery::Log,
@@ -203,6 +219,7 @@ def upload_changed(repo, checkpoint)
       environment_dir: File.join(base_dir, environment_dir),
       node_dir: File.join(base_dir, node_dir),
       role_dir: File.join(base_dir, ChefDelivery::Config.role_path),
+      role_local_dir: File.join(base_dir, role_local_dir),
       user_dir: File.join(base_dir, ChefDelivery::Config.user_path)
   )
 

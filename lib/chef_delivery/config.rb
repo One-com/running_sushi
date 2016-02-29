@@ -45,6 +45,7 @@ module ChefDelivery
     environment_path 'environments'
     node_path 'nodes'
     role_path 'roles'
+    role_local_path 'roles_local'
     user_path 'users'
     rev_checkpoint 'chef_delivery_revision'
     vcs_type 'git'

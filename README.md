@@ -71,6 +71,8 @@ In addition the following are also available:
   `nodes`
 * role_path - A directory to find roles in relative to `reponame`. Default:
   `roles`
+* role_local_path - A directory to find environment specific roles in relative to `reponame`. Default:
+  `roles_local`
 * user_path - A directory to find users in relative to `reponame`. Default:
   `users`
 * rev_checkpoint - Name of the file to store the last-uploaded revision,
