@@ -126,16 +126,24 @@ def chef_upload(knife, repo, checkpoint, local_head)
   added_cookbooks = changeset.cookbooks.select do |x|
     x.status == :modified || x.status == :created
   end
-  deleted_roles = changeset.roles.select { |x| x.status == :deleted }
-  added_roles = changeset.roles.select do |x|
-    x.status == :modified  || x.status == :created
+  deleted_roles = changeset.roles.select do |x|
+    localrolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_local_path,lpod)
+    localrolefile+= "/#{x.name}.json"
+    if not File.file?(localrolefile)
+        x.status == :deleted
+    end
   end
-
+  added_roles = changeset.roles.select do |x|
+    localrolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_local_path,lpod)
+    localrolefile+= "/#{x.name}.json"
+    if not File.file?(localrolefile)
+        x.status == :modified  || x.status == :created
+    end
+  end
   deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted }
   added_roles_local = changeset.roles_local.select do |x|
     x.status == :modified  || x.status == :created
   end
-
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
   added_databags = changeset.databags.select do
     |x| x.status == :modified || x.status == :created
