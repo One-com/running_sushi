@@ -127,26 +127,18 @@ def chef_upload(knife, repo, checkpoint, local_head)
     x.status == :modified || x.status == :created
   end
   deleted_roles = changeset.roles.select do |x|
-    localrolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_local_path,lpod)
-    localrolefile+= "/#{x.name}.json"
-    if not File.file?(localrolefile)
         x.status == :deleted
-    end
   end
   added_roles = changeset.roles.select do |x|
-    localrolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_local_path,lpod)
-    localrolefile+= "/#{x.name}.json"
-    if not File.file?(localrolefile)
-        x.status == :modified  || x.status == :created
-    end
+    x.status == :modified  || x.status == :created
   end
-  deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted }
+  deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted  }
   added_roles_local = changeset.roles_local.select do |x|
     x.status == :modified  || x.status == :created
   end
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
-  added_databags = changeset.databags.select do
-    |x| x.status == :modified || x.status == :created
+  added_databags = changeset.databags.select do |x|
+    x.status == :modified || x.status == :created
   end
   deleted_nodes = changeset.nodes.select { |x| x.status == :deleted }
   added_nodes = changeset.nodes.select do |x|
@@ -163,6 +155,29 @@ def chef_upload(knife, repo, checkpoint, local_head)
   deleted_clients = changeset.clients.select { |x| x.status == :deleted }
   added_clients = changeset.clients.select do |x|
     x.status == :modified || x.status == :created
+  end
+
+  lpod = ChefDelivery::Config.pod_name || ""
+
+  # Reject roles if a local role exist
+  if added_roles
+    added_roles.reject! do |x|
+      localrolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_local_path,lpod) + "/#{x.name}.json"
+      File.file?(localrolefile) && (deleted_roles_local.empty? && !deleted_roles_local.include?(x.name))
+    end
+  end
+
+  # When deleting a local role upload global if exists (Atomic)
+  if deleted_roles_local
+    deleted_roles_local.each do |x|
+      rolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_path) + "/#{x.name}.json"
+      if File.file?(rolefile)
+        added_roles.push(x)
+        deleted_roles_local.reject! do |y|
+          x.name == y.name
+        end
+      end
+    end
   end
 
   {
@@ -188,10 +203,11 @@ def chef_upload(knife, repo, checkpoint, local_head)
 
   knife.cookbook_delete(deleted_cookbooks) if deleted_cookbooks
   knife.cookbook_upload(added_cookbooks) if added_cookbooks
-  knife.role_delete(deleted_roles) if deleted_roles
-  knife.role_upload(added_roles) if added_roles
 
-  knife.role_local_upload(deleted_roles_local) if deleted_roles_local
+  knife.role_delete(deleted_roles) if deleted_roles
+  knife.role_local_delete(deleted_roles_local) if deleted_roles_local
+
+  knife.role_upload(added_roles) if added_roles
   knife.role_local_upload(added_roles_local) if added_roles_local
 
   knife.databag_delete(deleted_databags) if deleted_databags
