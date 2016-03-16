@@ -123,3 +123,7 @@ In this case both versions of the 'morewebthing' cookbook will exist on the trac
 ## Chef server setup
 
 Chef Delivery has been designed so the full configuration state is kept in the Chef repo and a Chef server can be bootstrapped to replace an existing Chef server quickly just by starting to track the Chef repo with Chef Delivery. Delegating Chef Server responsibility to pod level (subdir in clients, nodes and environments) can be accomplished by using Git sparse checkouts and the 'pod_name' variable of the Chef Delivery config file. Note: In order to use this scheme make sure your recipes do not rely on Chef searches which return empty result sets  (before the Chef clients have checked in) during bootstrapping of a new Chef server.
+
+## Race conditions
+Chef delivery does not check if 2 (node, env, role) name is the same but the .json files are different. This should be controlled in for example git hooks
+
