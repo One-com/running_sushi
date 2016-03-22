@@ -1,31 +1,34 @@
-# Chef Delivery
+# Running Sushi
 
 ## Intro
 
-Welcome to Chef Delivery, software to keep cookbooks, clients, databags, environments, nodes, roles and users in
+Welcome to Running Sushi, software to keep cookbooks, clients, databags, environments, nodes, roles and users in
 sync between a Git repo and a chef server. The idea is that if you have
 multiple, distinct Chef server instances that should all be identical or track a specific part of a Chef git repo, they can all run this script in cron. The script uses proper locking, so you should be
 able to run it every minute.
 
-Chef delivery is derived from Facebook's [Grocery Delivery](https://github.com/facebook/grocery-delivery) with the following changes:
+Running Sushi is derived from Facebook's [Grocery Delivery](https://github.com/facebook/grocery-delivery) with the following changes:
 
  * Clients, environments, nodes and users can be tracked as well
  * Cookbook versioning can be used by version tag post pending cookbook dirs
+ * It is possible to segment the repo in parts to be tracked by different Chef servers (such a segment is termed "pod" in following documentation)
  * Uses the Chef Server API so no knife config is needed
  * Only Git is supported
 
+**Note**: This project was previously named "Chef Delivery" but has been renamed to avoid confusion with the unrelated [Chef Delivery](https://www.chef.io/delivery/) project. Currently executable name and configuration still reflects the old project name.
+
 ## Prerequisites
 
-Chef Delivery is a particular way of managing your Chef infrastructure,
+Running Sushi is a particular way of managing your Chef infrastructure,
 and it assumes you follow that model consistently. Here are the basic
 principals:
 
 * Checkins are live immediately (which implies code review before merge)
 * You want all your Chef servers in sync with the Git repo
 * A Chef server tracks all cookbook, user and role dirs
-* A Chef server can track all node, client and environment dirs or just a subtree of these dirs (for segmenting infrastructure)
+* A Chef server can track all node, client and environment dirs or just a subtree of these dirs (for segmenting infrastructure). Roles can both be global and pod local
 * Everything you care about comes from version control
-* All files in the Chef repo must be JSON (except for cookbooks). It's recommended to use Git hooks to enforce this as Chef Delivery aborts the Chef Server upload phase if invalid JSON is encountered.
+* All files in the Chef repo must be JSON (except for cookbooks). It's recommended to use Git hooks to enforce this as Running Sushi aborts the Chef Server upload phase if invalid JSON is encountered.
 
 ## Dependencies
 
@@ -50,7 +53,7 @@ All command-line options are available in the config file:
 
 In addition the following are also available:
 
-* master_path - The top-level path for Chef Delivery's work. Most other
+* master_path - The top-level path for Running Sushi's work. Most other
   paths are relative to this. Default: `/var/chef/chef_delivery_work`
 * repo_url - The URL to clone/checkout (git shallow clone) if it doesn't exist. Default: `nil`
 * reponame - The relative directory to check the repo out to, inside of
@@ -71,7 +74,7 @@ In addition the following are also available:
   `nodes`
 * role_path - A directory to find roles in relative to `reponame`. Default:
   `roles`
-* role_local_path - A directory to find environment specific roles in relative to `reponame`. Default:
+* role\_local\_path - A directory to find pod specific roles in relative to `reponame`. Default:
   `roles_local`
 * user_path - A directory to find users in relative to `reponame`. Default:
   `users`
@@ -81,9 +84,9 @@ In addition the following are also available:
 
 ## Usage
 
-The Chef Delivery script (chef-delivery) is designed to run on a Chef server as a cron job. The chef-delivery script pulls from the git chef-repo, determines which changes corresponds to Chef objects and upload the changed Chef objects.
+The Running Sushi script (**chef-delivery**) is designed to run on a Chef server as a cron job. The chef-delivery script pulls from the git chef-repo, determines which changes corresponds to Chef objects and upload the changed Chef objects.
 
-For clients, nodes and environments chef-delivery can handle subdirs e.g.
+For clients, nodes, environments and roles_local chef-delivery can handle subdirs e.g.
 
 	...
 	|-- nodes
@@ -122,8 +125,13 @@ In this case both versions of the 'morewebthing' cookbook will exist on the trac
 
 ## Chef server setup
 
-Chef Delivery has been designed so the full configuration state is kept in the Chef repo and a Chef server can be bootstrapped to replace an existing Chef server quickly just by starting to track the Chef repo with Chef Delivery. Delegating Chef Server responsibility to pod level (subdir in clients, nodes and environments) can be accomplished by using Git sparse checkouts and the 'pod_name' variable of the Chef Delivery config file. Note: In order to use this scheme make sure your recipes do not rely on Chef searches which return empty result sets  (before the Chef clients have checked in) during bootstrapping of a new Chef server.
+Running Sushi has been designed so the full configuration state is kept in the Chef repo and a Chef server can be bootstrapped to replace an existing Chef server quickly just by starting to track the Chef repo with Running Sushi. Delegating Chef Server responsibility to pod level (subdir in clients, nodes, environments and roles\_local) can be accomplished by using Git sparse checkouts and the 'pod_name' variable of the Running Sushi config file. Note: In order to use this scheme make sure your recipes do not rely on Chef searches which return empty result sets  (before the Chef clients have checked in) during bootstrapping of a new Chef server.
 
-## Race conditions
-Chef delivery does not check if 2 (node, env, role) name is the same but the .json files are different. This should be controlled in for example git hooks
+## Cookbook dependency management
 
+Running Sushi has no notion of cookbook dependencies and uploads all cookbooks in the git repo to all tracking Chef Servers. Tools like [librarian-chef](https://github.com/applicationsonline/librarian-chef) can be used for cookbook development but the dependency cookbooks have to be added explicitly to git repo.
+
+## Limitations
+
+* Running Sushi does not check if two (node, environment, role) names are the same but the .json files are different. This should be controlled with git hooks or similar
+* Currently Running Sushi only supports Chef Server 11 as Chef Server 12 has introduced breaking changes with regards to node preseeding
