@@ -48,6 +48,7 @@ module ChefDelivery
     role_local_path 'roles_local'
     user_path 'users'
     rev_checkpoint 'chef_delivery_revision'
+    node_checkpoint 'node_upload_checkpoint'
     vcs_type 'git'
     vcs_path nil
     plugin_path '/etc/chef_delivery_plugin.rb'

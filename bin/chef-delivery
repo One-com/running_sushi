@@ -27,8 +27,22 @@ require 'chef_delivery/knife'
 require 'chef/config'
 require 'optparse'
 require 'logger'
+require 'json'
 
 # rubocop:disable GlobalVars
+
+class ChangeProxy
+  attr_accessor :full_name
+
+  def to_s
+    @full_name
+  end
+
+  def initialize(full_name)
+    @full_name = full_name
+  end
+end
+
 $success = false
 $status_msg = 'NO WORK DONE'
 $lockfileh = nil
@@ -69,6 +83,28 @@ end
 def read_checkpoint
   ChefDelivery::Log.debug("Reading #{checkpoint_path}")
   File.exists?(checkpoint_path) ? File.read(checkpoint_path).strip : nil
+end
+
+def node_checkpoint_path
+  File.join(ChefDelivery::Config.master_path,
+            ChefDelivery::Config.node_checkpoint)
+end
+
+def write_node_checkpoint(nodes, rev)
+  node_checkpoint = [rev, nodes]
+  File.write(node_checkpoint_path, node_checkpoint.to_json) unless ChefDelivery::Config.dry_run
+end
+
+def read_node_checkpoint
+  ChefDelivery::Log.debug("Reading #{node_checkpoint_path}")
+  if File.exists?(node_checkpoint_path)
+    upload_checkpoint = JSON.parse(File.read(node_checkpoint_path))
+    checkpoint = upload_checkpoint[0]
+    nodes = upload_checkpoint[1]
+    return checkpoint, nodes
+  else
+    return nil, []
+  end
 end
 
 def get_pod_config
@@ -144,6 +180,25 @@ def chef_upload(knife, repo, checkpoint, local_head)
   added_nodes = changeset.nodes.select do |x|
     x.status == :modified || x.status == :created
   end
+
+  # Check if last node upload was successful.
+  # This is to workaround the builtin Chef racecondition of node content being overwritten
+  # by chef-client save-back if a node object is changed on the server during a client run
+  # on the node server
+  verify_checkpoint, verify_nodes = read_node_checkpoint
+  if verify_checkpoint
+    # Select nodes from checklist where the checkpoint on the Chef server is not correct
+    reupload_nodes = verify_nodes.reject { |x| knife.verify_node_upload(File.split(x)[-1], verify_checkpoint) }
+    reupload_nodes.each do |x|
+      node_file = File.join(ChefDelivery::Config.master_path, ChefDelivery::Config.reponame, node_dir) + "/#{x}.json"
+      if File.file?(node_file)
+        # Only re-upload if node has not been deleted from repo
+        node_proxy = ChangeProxy.new(x)
+        added_nodes.push(node_proxy)
+      end
+    end
+  end
+
   deleted_environments = changeset.environments.select { |x| x.status == :deleted }
   added_environments = changeset.environments.select do |x|
     x.status == :modified || x.status == :created
@@ -157,22 +212,29 @@ def chef_upload(knife, repo, checkpoint, local_head)
     x.status == :modified || x.status == :created
   end
 
-  lpod = ChefDelivery::Config.pod_name || ""
-
-  # Reject roles if a local role exist
+  # Reject upload of role if a local role exist
   if added_roles
     added_roles.reject! do |x|
-      localrolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_local_path,lpod) + "/#{x.name}.json"
-      File.file?(localrolefile) && (deleted_roles_local.empty? && !deleted_roles_local.include?(x.name))
+      localrolefile = File.join(ChefDelivery::Config.master_path, ChefDelivery::Config.reponame, role_local_dir) + "/#{x.full_name}.json"
+      File.file?(localrolefile)
+    end
+  end
+
+  # Reject deletion of role if local role exists
+  if deleted_roles
+    deleted_roles.reject! do |x|
+      localrolefile = File.join(ChefDelivery::Config.master_path, ChefDelivery::Config.reponame, role_local_dir) + "/#{x.full_name}.json"
+      File.file?(localrolefile)
     end
   end
 
   # When deleting a local role upload global if exists (Atomic)
   if deleted_roles_local
     deleted_roles_local.each do |x|
-      rolefile = File.join(ChefDelivery::Config.master_path,ChefDelivery::Config.reponame,ChefDelivery::Config.role_path) + "/#{x.name}.json"
+      rolefile = File.join(ChefDelivery::Config.master_path, ChefDelivery::Config.reponame, ChefDelivery::Config.role_path) + "/#{x.name}.json"
       if File.file?(rolefile)
-        added_roles.push(x)
+        role_proxy = ChangeProxy.new(x.name)
+        added_roles.push(role_proxy)
         deleted_roles_local.reject! do |y|
           x.name == y.name
         end
@@ -213,7 +275,10 @@ def chef_upload(knife, repo, checkpoint, local_head)
   knife.databag_delete(deleted_databags) if deleted_databags
   knife.databag_upload(added_databags) if added_databags
   knife.node_delete(deleted_nodes) if deleted_nodes
-  knife.node_upload(added_nodes) if added_nodes
+  if added_nodes
+    knife.node_upload(added_nodes, local_head)
+    write_node_checkpoint(added_nodes, local_head)
+  end
   knife.environment_delete(deleted_environments) if deleted_environments
   knife.environment_upload(added_environments) if added_environments
   knife.user_delete(deleted_users) if deleted_users
@@ -350,8 +415,9 @@ if ChefDelivery::Config.dry_run && !repo.exists?
 end
 
 checkpoint = read_checkpoint
-if repo.exists? && repo.head_rev == checkpoint
-  ChefDelivery::Log.warn('Repo has not changed, nothing to do...')
+node_checkpoint, uploaded_nodes = read_node_checkpoint
+if repo.exists? && repo.head_rev == checkpoint && uploaded_nodes.size == 0
+  ChefDelivery::Log.warn('Repo has not changed and no node uploads to check, nothing to do...')
   $success = true
   $status_msg = "Success at #{checkpoint}"
 else

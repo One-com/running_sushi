@@ -30,10 +30,28 @@ principals:
 * Everything you care about comes from version control
 * All files in the Chef repo must be JSON (except for cookbooks). It's recommended to use Git hooks to enforce this as Running Sushi aborts the Chef Server upload phase if invalid JSON is encountered.
 
+## Why Running Sushi?
+
+Running Sushi has been developed to address the following issues with the normal Chef workflow
+
+* Human scaling: Managing using the Knife tool does not scale to many users. Enter a Git driven automatic workflow
+* Infrastructure scaling: Running Sushi extends the Chef repo with a "pod" level allowing infrastructure described by a Chef repo to be segmented where each segment is controlled by a distinct Chef Server
+* Disposability: Running Sushi demotes the Chef Server to a construction that tracks a Git repo. Thus a Chef Server can be destroyed and redeployed without any concerns
+
 ## Dependencies
 
 * Mixlib::Config
 * [chef_diff](https://github.com/One-com/chef_diff)
+
+## Installation
+
+Running Sushi uses the internal Chef API so it must available on the installation host. It is recommended to install Running Sushi (and Chef Diff) on the Chef Server that should track a Chef repo:
+
+    $ /opt/chef/embedded/bin/gem install /path/to/chef_delivery-[version].gem
+
+now Running Sushi can be executed as
+
+    $ /opt/chef/embedded/bin/chef-delivery -v
 
 ## Config file
 

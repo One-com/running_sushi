@@ -93,8 +93,8 @@ module ChefDelivery
       delete_standard('clients', clients, Chef::ApiClient)
     end
 
-    def node_upload(nodes)
-      upload_standard('nodes', @node_dir, nodes, Chef::Node)
+    def node_upload(nodes, checkpoint)
+      upload_standard('nodes', @node_dir, nodes, Chef::Node, checkpoint=checkpoint)
     end
 
     def node_delete(nodes)
@@ -143,7 +143,7 @@ module ChefDelivery
       delete_standard('users', users, Chef::User)
     end
 
-    def upload_standard(component_type, path, components, klass)
+    def upload_standard(component_type, path, components, klass, checkpoint=nil)
       # Handle upload using Chef objects
       if components.any?
 
@@ -155,6 +155,9 @@ module ChefDelivery
         files.each do |f|
           @logger.info "Upload from #{f}"
           updated = loader.object_from_file(f)
+          if checkpoint
+            updated.normal['running_sushi']['checkpoint'] = checkpoint
+          end
           updated.save
         end
       end
@@ -317,6 +320,22 @@ module ChefDelivery
       end
 
       return name, version
+    end
+
+    def verify_node_upload(node, checkpoint)
+      @logger.info "=== Verifying upload of #{node} ==="
+      begin
+        chef_node = Chef::Node.load(node)
+        if chef_node.normal['running_sushi']['checkpoint'] != checkpoint
+          @logger.info " Upload verify of #{node} failed. Reuploading"
+          return false
+        else
+          return true
+        end
+      rescue Exception => e
+        @logger.info " Upload verify of #{node} failed. Reuploading"
+        return false
+      end
     end
   end
 end
