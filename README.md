@@ -47,15 +47,15 @@ Running Sushi has been developed to address the following issues with the normal
 
 Running Sushi uses the internal Chef API so it must be available on the installation host. It is recommended to install Running Sushi (and Chef Diff) on the Chef Server that should track a Chef repo:
 
-    $ /opt/chef/embedded/bin/gem install /path/to/chef_delivery-[version].gem
+    $ /opt/chef/embedded/bin/gem install /path/to/running_sushi-[version].gem
 
 now Running Sushi can be executed as
 
-    $ /opt/chef/embedded/bin/chef-delivery -v
+    $ /opt/chef/embedded/bin/running-sushi -v
 
 ## Config file
 
-The default config file is `/etc/chef/chef_delivery_config.rb` but you may use -c to specify
+The default config file is `/etc/chef/running_sushi_config.rb` but you may use -c to specify
 another. The config file works the same as client.rb does for Chef - there
 are a series of keywords that take an argument and anything else is just
 standard Ruby.
@@ -65,14 +65,14 @@ All command-line options are available in the config file:
 * dry_run (bool, default: false)
 * debug (bool, default: false)
 * timestamp (bool, default: false)
-* config_file (string, default: `/etc/chef/chef_delivery_config.rb`)
-* lockfile (string, default: `/var/lock/chef_delivery`)
-* pidfile (string, default: `/var/run/chef_delivery.pid`)
+* config_file (string, default: `/etc/chef/running_sushi_config.rb`)
+* lockfile (string, default: `/var/lock/running_sushi`)
+* pidfile (string, default: `/var/run/running_sushi.pid`)
 
 In addition the following are also available:
 
 * master_path - The top-level path for Running Sushi's work. Most other
-  paths are relative to this. Default: `/var/chef/chef_delivery_work`
+  paths are relative to this. Default: `/var/chef/running_sushi_work`
 * repo_url - The URL to clone/checkout (Git shallow clone) if it doesn't exist. Default: `nil`
 * reponame - The relative directory to check the repo out to, inside of
   `master_path`. Default: `ops`
@@ -97,14 +97,14 @@ In addition the following are also available:
 * user_path - A directory to find users in relative to `reponame`. Default:
   `users`
 * rev_checkpoint - Name of the file to store the last-uploaded revision,
-  relative to `reponame`. Default: `chef_delivery_revision`
-* plugin_path - Path to plugin file. Default: `/etc/chef_delivery_config_plugin.rb`
+  relative to `reponame`. Default: `running_sushi_revision`
+* plugin_path - Path to plugin file. Default: `/etc/running_sushi_config_plugin.rb`
 
 ## Usage
 
-The Running Sushi script (**chef-delivery**) is designed to run on a Chef Server as a cron job. The chef-delivery script pulls from the Git chef-repo, determines which changes corresponds to Chef objects and upload the changed Chef objects.
+The Running Sushi script (**running-sushi**) is designed to run on a Chef Server as a cron job. The running-sushi script pulls from the Git chef-repo, determines which changes corresponds to Chef objects and upload the changed Chef objects.
 
-For clients, nodes, environments and roles_local chef-delivery can handle subdirs e.g.
+For clients, nodes, environments and roles_local running-sushi can handle subdirs e.g.
 
 	...
 	|-- nodes
@@ -127,7 +127,7 @@ Cookbooks can either exists as unversioned or versioned. An unversioned cookbook
 	|   `-- webthing
 	...
 
-any changes to a cookbook will be propagated by chef-delivery. It is recommended not to change the version tag in metadata.rb so the cookbook is overwritten on the Chef Server as well.
+any changes to a cookbook will be propagated by running-sushi. It is recommended not to change the version tag in metadata.rb so the cookbook is overwritten on the Chef Server as well.
 
 A versioned cookbook can be kept by post pending a version tag to the cookbook name
 

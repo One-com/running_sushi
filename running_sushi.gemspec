@@ -1,14 +1,14 @@
 Gem::Specification.new do |s|
-  s.name = 'chef_delivery'
-  s.version = '0.4.1'
+  s.name = 'running_sushi'
+  s.version = '0.5.0'
   s.platform = Gem::Platform::RUBY
-  s.summary = 'Chef Delivery'
+  s.summary = 'Running Sushi'
   s.description = 'Utility for keeping Chef servers in sync with a repo'
   s.authors = ['Esben S. Nielsen']
   s.extra_rdoc_files = ['README.md', 'LICENSE']
-  s.files = %w{README.md LICENSE} + Dir.glob("lib/chef_delivery/*.rb") +
+  s.files = %w{README.md LICENSE} + Dir.glob("lib/running_sushi/*.rb") +
     Dir.glob("bin/*")
-  s.executables = 'chef-delivery'
+  s.executables = 'running-sushi'
   s.license = 'Apache'
   %w{
     mixlib-config
