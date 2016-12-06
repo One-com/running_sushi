@@ -29,10 +29,10 @@ module ChefDelivery
     dry_run false
     verbosity Logger::WARN
     timestamp false
-    config_file '/etc/chef/chef_delivery_config.rb'
-    pidfile '/var/run/chef_delivery.pid'
-    lockfile '/var/lock/chef_delivery'
-    master_path '/var/chef/chef_delivery_work'
+    config_file '/etc/chef/running_sushi_config.rb'
+    pidfile '/var/run/running_sushi.pid'
+    lockfile '/var/lock/running_sushi'
+    master_path '/var/chef/running_sushi_work'
     repo_url nil
     reponame 'ops'
     pod_name nil
@@ -47,10 +47,10 @@ module ChefDelivery
     role_path 'roles'
     role_local_path 'roles_local'
     user_path 'users'
-    rev_checkpoint 'chef_delivery_revision'
+    rev_checkpoint 'running_sushi_revision'
     node_checkpoint 'node_upload_checkpoint'
     vcs_type 'git'
     vcs_path nil
-    plugin_path '/etc/chef_delivery_plugin.rb'
+    plugin_path '/etc/running_sushi_plugin.rb'
   end
 end
