@@ -150,8 +150,6 @@ def chef_upload(knife, repo, checkpoint, local_head)
         role_local_dir,
       role_dir:
         ChefDelivery::Config.role_path,
-      user_dir:
-        ChefDelivery::Config.user_path,
     )
   rescue ChefDiff::Changeset::ReferenceError
     ChefDelivery::Log.error('Repo error, invalid revision, exiting')
@@ -203,10 +201,6 @@ def chef_upload(knife, repo, checkpoint, local_head)
   added_environments = changeset.environments.select do |x|
     x.status == :modified || x.status == :created
   end
-  deleted_users = changeset.users.select { |x| x.status == :deleted }
-  added_users = changeset.users.select do |x|
-    x.status == :modified || x.status == :created
-  end
   deleted_clients = changeset.clients.select { |x| x.status == :deleted }
   added_clients = changeset.clients.select do |x|
     x.status == :modified || x.status == :created
@@ -255,8 +249,6 @@ def chef_upload(knife, repo, checkpoint, local_head)
     'Deleted nodes' => deleted_nodes,
     'Added environments' => added_environments,
     'Deleted environments' => deleted_environments,
-    'Added users' => added_users,
-    'Deleted users' => deleted_users,
     'Added clients' => added_clients,
     'Deleted clients' => deleted_clients,
   }.each do |msg, list|
@@ -281,8 +273,6 @@ def chef_upload(knife, repo, checkpoint, local_head)
   end
   knife.environment_delete(deleted_environments) if deleted_environments
   knife.environment_upload(added_environments) if added_environments
-  knife.user_delete(deleted_users) if deleted_users
-  knife.user_upload(added_users) if added_users
   knife.client_delete(deleted_clients) if deleted_clients
   knife.client_upload(added_clients) if added_clients
 end
@@ -309,7 +299,6 @@ def upload_changed(repo, checkpoint)
       node_dir: File.join(base_dir, node_dir),
       role_dir: File.join(base_dir, ChefDelivery::Config.role_path),
       role_local_dir: File.join(base_dir, role_local_dir),
-      user_dir: File.join(base_dir, ChefDelivery::Config.user_path)
   )
 
   chef_upload(knife, repo, checkpoint, local_head)

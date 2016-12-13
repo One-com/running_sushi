@@ -2,14 +2,14 @@
 
 ## Intro
 
-Welcome to Running Sushi, software to keep cookbooks, clients, databags, environments, nodes, roles and users in
+Welcome to Running Sushi, software to keep cookbooks, clients, databags, environments, nodes and roles in
 sync between a Git repo and a Chef Server. The idea is that if you have
 multiple, distinct Chef Server instances that should all be identical or track a specific part of a Chef Git repo, they can all run this script in cron. The script uses proper locking, so you should be
 able to run it every minute.
 
 Running Sushi is derived from Facebook's [Grocery Delivery](https://github.com/facebook/grocery-delivery) with the following changes:
 
- * Clients, environments, nodes and users can be tracked as well
+ * Clients, environments and nodes can be tracked as well
  * Cookbook versioning can be used by version tag post pending cookbook dirs
  * It is possible to segment the repo in parts to be tracked by different Chef Servers (such a segment is termed "pod" in following documentation)
  * Uses the Chef Server API so no knife config is needed
@@ -25,7 +25,7 @@ principals:
 
 * Checkins are live immediately (which implies code review before merge)
 * You want all your Chef Servers in sync with the Git repo
-* A Chef Server tracks all cookbook, user and role dirs
+* A Chef Server tracks all cookbook and role dirs
 * A Chef Server can track all node, client and environment dirs or just a subtree of these dirs (for segmenting infrastructure). Roles can both be global and pod local
 * Everything you care about comes from version control
 * All files in the Chef repo must be JSON (except for cookbooks). It's recommended to use Git hooks to enforce this as Running Sushi aborts the Chef Server upload phase if invalid JSON is encountered.
@@ -94,8 +94,6 @@ In addition the following are also available:
   `roles`
 * role\_local\_path - A directory to find pod specific roles in relative to `reponame`. Default:
   `roles_local`
-* user_path - A directory to find users in relative to `reponame`. Default:
-  `users`
 * rev_checkpoint - Name of the file to store the last-uploaded revision,
   relative to `reponame`. Default: `running_sushi_revision`
 * plugin_path - Path to plugin file. Default: `/etc/running_sushi_config_plugin.rb`

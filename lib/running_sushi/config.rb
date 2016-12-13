@@ -46,7 +46,6 @@ module ChefDelivery
     node_path 'nodes'
     role_path 'roles'
     role_local_path 'roles_local'
-    user_path 'users'
     rev_checkpoint 'running_sushi_revision'
     node_checkpoint 'node_upload_checkpoint'
     vcs_type 'git'

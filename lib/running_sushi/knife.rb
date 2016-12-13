@@ -27,11 +27,11 @@ require 'chef/data_bag'
 require 'chef/data_bag_item'
 require 'chef/node'
 require 'chef/role'
-require 'chef/user'
 require 'chef/knife/core/object_loader'
 require 'chef/knife/cookbook_delete'
 require 'chef/cookbook/cookbook_version_loader'
 require 'chef/cookbook_uploader'
+
 
 module ChefDelivery
   # Knife does not have a usable API for using it as a lib
@@ -51,14 +51,17 @@ module ChefDelivery
       @node_dir = opts[:node_dir]
       @role_dir = opts[:role_dir]
       @role_local_dir = opts[:role_local_dir]
-      @user_dir = opts[:user_dir]
       @checksum_dir = opts[:checksum_dir]
       @master_path = opts[:master_path]
       @base_dir = opts[:base_dir]
     end
 
     def http_api
-      Chef::REST.new(Chef::Config[:chef_server_url])
+      begin
+        Chef::ServerAPI.new(Chef::Config[:chef_server_url])
+      rescue
+        Chef::REST.new(Chef::Config[:chef_server_url])
+      end
     end
 
     def environment_upload(environments)
@@ -70,6 +73,27 @@ module ChefDelivery
       delete_standard('environments', environments, Chef::Environment)
     end
 
+    def update_permissions(node)
+      return unless Chef::Node.list.include?(node)
+
+      begin
+        ace = http_api::get_rest("nodes/#{node}/_acl")
+      rescue Net::HTTPServerException => e
+        @logger.info "ACL probably not supported, might be chef 11"
+        return
+      end
+
+      %w{read update delete grant}.each do |perm|
+        # Continue if its included
+        next if ace[perm]['actors'].include?(node)
+
+        ace[perm]['actors'] << node
+        http_api::put_rest("nodes/#{node}/_acl/#{perm}", perm => ace[perm])
+        @logger.info "Client \"#{node}\" granted \"#{perm}\" access on node \"#{node}\""
+      end
+    end
+
+
     def client_upload(clients)
       files = clients.map { |x| File.join(@client_dir, "#{x.full_name}.json") }
       files.each do |f|
@@ -78,13 +102,18 @@ module ChefDelivery
         client_name = r['name']
         begin
           # Try updating client
-          http_api.put_rest("clients/#{client_name}", r)
-          @logger.info "Updated #{client_name}"
+          chef_client = Chef::ApiClient.new()
+          chef_client.name(r['name'])
+          chef_client.public_key(r['public_key'])
+          chef_client.admin(r['admin']) if r['admin']
+          chef_client.save
+
+          update_permissions(r['name'])
+          @logger.info "Updated/Created #{client_name}"
+
         rescue Net::HTTPServerException => e
           raise e unless e.response.code == '404'
-          @logger.info "Creating #{client_name}"
-          # Client not found. Try creating
-          http_api.post_rest('clients', r)
+          @logger.warn "Should not be here! #{client_name}"
         end
       end
     end
@@ -115,32 +144,6 @@ module ChefDelivery
 
     def role_local_delete(roles_local)
       delete_standard('roles_local', roles_local, Chef::Role)
-    end
-
-    def user_upload(users)
-      files = users.map { |x| File.join(@user_dir, "#{x.full_name}.json") }
-      files.each do |f|
-        @logger.info "Upload from #{f}"
-        r = FFI_Yajl::Parser.parse(IO.read(f))
-        user_name = r['name']
-        begin
-          # Try updating user
-          http_api.put_rest("users/#{user_name}", r)
-          @logger.info "Updated #{user_name}"
-        rescue Net::HTTPServerException => e
-          raise e unless e.response.code == '404'
-          @logger.info "Creating #{user_name}"
-          if !r.has_key?('password')
-            r['password'] = SecureRandom.hex[0..7]
-          end
-          # User not found. Try creating
-          http_api.post_rest('users', r)
-        end
-      end
-    end
-
-    def user_delete(users)
-      delete_standard('users', users, Chef::User)
     end
 
     def upload_standard(component_type, path, components, klass, checkpoint=nil)
