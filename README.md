@@ -150,4 +150,3 @@ Running Sushi has no notion of cookbook dependencies and uploads all cookbooks i
 ## Limitations
 
 * Running Sushi does not check if two (node, environment, role) names are the same but the .json files are different. This should be controlled with Git hooks or similar
-* Currently Running Sushi only supports Chef Server 11 as Chef Server 12 has introduced breaking changes with regards to node preseeding
