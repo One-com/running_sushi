@@ -22,7 +22,7 @@ require 'fileutils'
 require 'digest/md5'
 require 'securerandom'
 require 'chef/environment'
-require 'chef/api_client'
+require 'chef/api_client_v1'
 require 'chef/data_bag'
 require 'chef/data_bag_item'
 require 'chef/node'
@@ -100,14 +100,27 @@ module ChefDelivery
         @logger.info "Upload from #{f}"
         r = FFI_Yajl::Parser.parse(IO.read(f))
         client_name = r['name']
+        # Try updating client
+	
+        # Delete client if it does exists
         begin
-          # Try updating client
-          chef_client = Chef::ApiClient.new()
+          chef_client = Chef::ApiClientV1.new()
+          chef_client.name(r['name'])
+          chef_client.destroy()
+        rescue Net::HTTPServerException => e
+          raise e unless e.response.code == '404'
+          @logger.info "#{client_name} did not exist, creating"
+        end
+
+        # Create client in all cases
+        begin
+          chef_client = Chef::ApiClientV1.new()
           chef_client.name(r['name'])
           chef_client.public_key(r['public_key'])
           chef_client.admin(r['admin']) if r['admin']
-          chef_client.save
+          chef_client.create
 
+          # Update permissions (Chef 12 thing)
           update_permissions(r['name'])
           @logger.info "Updated/Created #{client_name}"
 
@@ -119,7 +132,7 @@ module ChefDelivery
     end
 
     def client_delete(clients)
-      delete_standard('clients', clients, Chef::ApiClient)
+      delete_standard('clients', clients, Chef::ApiClientV1)
     end
 
     def node_upload(nodes, checkpoint)
@@ -245,7 +258,7 @@ module ChefDelivery
         chef_databag.destroy
       rescue Net::HTTPServerException => e
         raise e unless e.response.code == '404'
-        @logger.info "#{data_bag} not found. Cannot delete"
+        @logger.info "#{databag} not found. Cannot delete"
       end
     end
 

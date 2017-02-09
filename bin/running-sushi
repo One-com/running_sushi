@@ -355,6 +355,7 @@ def setup_config
   Chef::Config[:node_name] = ChefDelivery::Config.user
   Chef::Config[:client_key] = ChefDelivery::Config.pem
   Chef::Config[:chef_server_url] = ChefDelivery::Config.chef_server_url
+  Chef::Config[:ssl_verify_mode] = ChefDelivery::Config.ssl_verify_mode || :verify_peer
 end
 
 def get_repo
