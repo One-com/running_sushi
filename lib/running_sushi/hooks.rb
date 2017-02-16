@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-module ChefDelivery
+module RunningSushi
   # Hook class for GD
   class Hooks
     # This code will run once we've read our config and loaded our plugins

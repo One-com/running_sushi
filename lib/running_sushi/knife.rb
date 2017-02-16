@@ -33,7 +33,7 @@ require 'chef/cookbook/cookbook_version_loader'
 require 'chef/cookbook_uploader'
 
 
-module ChefDelivery
+module RunningSushi
   # Knife does not have a usable API for using it as a lib
   # This could be possibly refactored to touch its internals
   # instead of shelling out
