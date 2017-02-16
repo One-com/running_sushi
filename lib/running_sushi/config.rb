@@ -19,7 +19,7 @@
 require 'mixlib/config'
 require 'logger'
 
-module ChefDelivery
+module RunningSushi
   # Config file parser and config object
   # Uses Mixlib::Config v1 syntax so it works in Chef10 omnibus...
   # it's compatible with v2, so it should work in 11 too.

@@ -19,7 +19,7 @@
 require 'syslog'
 require 'logger'
 
-module ChefDelivery
+module RunningSushi
   # Logging wrapper
   # rubocop:disable ClassVars
   module Log
