@@ -75,20 +75,25 @@ module RunningSushi
 
     def update_permissions(node)
       return unless Chef::Node.list.include?(node)
+      @logger.info "Running ACL Update for node: #{node}"
 
       begin
         ace = http_api::get_rest("nodes/#{node}/_acl")
       rescue Net::HTTPServerException => e
-        @logger.info "ACL probably not supported, might be chef 11"
+        @logger.info 'ACL probably not supported, might be chef 11'
         return
       end
 
-      %w{read update delete grant}.each do |perm|
+      %w(read update delete grant).each do |perm|
         # Continue if its included
         next if ace[perm]['actors'].include?(node)
 
         ace[perm]['actors'] << node
-        http_api::put_rest("nodes/#{node}/_acl/#{perm}", perm => ace[perm])
+        begin
+          http_api::put_rest("nodes/#{node}/_acl/#{perm}", perm => ace[perm])
+        rescue Net::HTTPServerException => e
+          @logger.warn "Failed to set permission : #{perm} on node #{node}"
+        end
         @logger.info "Client \"#{node}\" granted \"#{perm}\" access on node \"#{node}\""
       end
     end
@@ -171,10 +176,13 @@ module RunningSushi
         files.each do |f|
           @logger.info "Upload from #{f}"
           updated = loader.object_from_file(f)
+
           if checkpoint
             updated.normal['running_sushi']['checkpoint'] = checkpoint
           end
           updated.save
+
+          update_permissions(updated.name()) if updated.is_a? Chef::Node
         end
       end
     end

@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'running_sushi'
-  s.version = '0.7.0'
+  s.version = '0.7.2'
   s.platform = Gem::Platform::RUBY
   s.summary = 'Running Sushi'
   s.description = 'Utility for keeping Chef servers in sync with a repo'
