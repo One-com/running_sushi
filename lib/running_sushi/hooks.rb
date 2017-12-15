@@ -44,7 +44,7 @@ module RunningSushi
     end
 
     def self.get(file)
-      class_eval(File.read(file), __FILE__, __LINE__) if File.exists?(file)
+      class_eval(File.read(file), __FILE__, __LINE__) if File.exist?(file)
     end
   end
 end
