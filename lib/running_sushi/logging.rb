@@ -45,17 +45,17 @@ module RunningSushi
     end
 
     def self.debug(msg)
-      if @@level == Logger::DEBUG
-        msg.prepend('DEBUG: ')
-        logit(Syslog::LOG_DEBUG, msg)
-      end
+      return unless @@level == Logger::DEBUG
+
+      msg.prepend('DEBUG: ')
+      logit(Syslog::LOG_DEBUG, msg)
     end
 
     def self.info(msg)
-      if @@level <= Logger::INFO
-        msg.prepend('INFO: ')
-        logit(Syslog::LOG_INFO, msg)
-      end
+      return unless @@level <= Logger::INFO
+
+      msg.prepend('INFO: ')
+      logit(Syslog::LOG_INFO, msg)
     end
 
     def self.warn(msg)

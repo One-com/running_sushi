@@ -15,6 +15,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# rubocop:disable Style/RedundantReturn
 
 require 'json'
 require 'ffi_yajl'
@@ -31,7 +32,6 @@ require 'chef/knife/core/object_loader'
 require 'chef/knife/cookbook_delete'
 require 'chef/cookbook/cookbook_version_loader'
 require 'chef/cookbook_uploader'
-
 
 module RunningSushi
   # Knife does not have a usable API for using it as a lib
@@ -57,11 +57,9 @@ module RunningSushi
     end
 
     def http_api
-      begin
-        Chef::ServerAPI.new(Chef::Config[:chef_server_url])
-      rescue
-        Chef::REST.new(Chef::Config[:chef_server_url])
-      end
+      Chef::ServerAPI.new(Chef::Config[:chef_server_url])
+    rescue
+      Chef::REST.new(Chef::Config[:chef_server_url])
     end
 
     def environment_upload(environments)
@@ -74,11 +72,11 @@ module RunningSushi
     end
 
     def update_permissions(node)
-      return unless Chef::Node.list.include?(node)
+      return unless Chef.Node.list.include?(node)
       @logger.info "Running ACL Update for node: #{node}"
 
       begin
-        ace = http_api::get_rest("nodes/#{node}/_acl")
+        ace = http_api.get_rest("nodes/#{node}/_acl")
       rescue Net::HTTPServerException => e
         @logger.info 'ACL probably not supported, might be chef 11'
         return
@@ -90,14 +88,13 @@ module RunningSushi
 
         ace[perm]['actors'] << node
         begin
-          http_api::put_rest("nodes/#{node}/_acl/#{perm}", perm => ace[perm])
+          http_api.put_rest("nodes/#{node}/_acl/#{perm}", perm => ace[perm])
         rescue Net::HTTPServerException => e
           @logger.warn "Failed to set permission : #{perm} on node #{node}"
         end
         @logger.info "Client \"#{node}\" granted \"#{perm}\" access on node \"#{node}\""
       end
     end
-
 
     def client_upload(clients)
       files = clients.map { |x| File.join(@client_dir, "#{x.full_name}.json") }
@@ -106,7 +103,6 @@ module RunningSushi
         r = FFI_Yajl::Parser.parse(IO.read(f))
         client_name = r['name']
         # Try updating client
-	
         # Delete client if it does exists
         begin
           chef_client = Chef::ApiClientV1.new()
@@ -128,7 +124,6 @@ module RunningSushi
           # Update permissions (Chef 12 thing)
           update_permissions(r['name'])
           @logger.info "Updated/Created #{client_name}"
-
         rescue Net::HTTPServerException => e
           raise e unless e.response.code == '404'
           @logger.warn "Should not be here! #{client_name}"
@@ -141,7 +136,7 @@ module RunningSushi
     end
 
     def node_upload(nodes, checkpoint)
-      upload_standard('nodes', @node_dir, nodes, Chef::Node, checkpoint=checkpoint)
+      upload_standard('nodes', @node_dir, nodes, Chef::Node, checkpoint)
     end
 
     def node_delete(nodes)
@@ -164,42 +159,39 @@ module RunningSushi
       delete_standard('roles_local', roles_local, Chef::Role)
     end
 
-    def upload_standard(component_type, path, components, klass, checkpoint=nil)
+    def upload_standard(component_type, path, components, klass, checkpoint = nil)
       # Handle upload using Chef objects
-      if components.any?
+      return unless components.any?
 
-        @logger.info "=== Uploading #{component_type} ==="
-        # Instatiate object using knife factory
-        loader = Chef::Knife::Core::ObjectLoader.new(klass, @logger)
+      @logger.info "=== Uploading #{component_type} ==="
+      # Instatiate object using knife factory
+      loader = Chef::Knife::Core::ObjectLoader.new(klass, @logger)
 
-        files = components.map { |x| File.join(path, "#{x.full_name}.json") }
-        files.each do |f|
-          @logger.info "Upload from #{f}"
-          updated = loader.object_from_file(f)
+      files = components.map { |x| File.join(path, "#{x.full_name}.json") }
+      files.each do |f|
+        @logger.info "Upload from #{f}"
+        updated = loader.object_from_file(f)
 
-          if checkpoint
-            updated.normal['running_sushi']['checkpoint'] = checkpoint
-          end
-          updated.save
+        updated.normal['running_sushi']['checkpoint'] = checkpoint if checkpoint
+        updated.save
 
-          update_permissions(updated.name()) if updated.is_a? Chef::Node
-        end
+        update_permissions(updated.name()) if updated.is_a? Chef::Node
       end
     end
 
     def delete_standard(component_type, components, klass)
       # Handle delete using Chef objects
-      if components.any?
-        @logger.info "=== Deleting #{component_type} ==="
-        components.each do |component|
-          @logger.info "Deleting #{component.name}"
-          begin
-            chef_component = klass.load(component.name)
-            chef_component.destroy
-          rescue Net::HTTPServerException => e
-            raise e unless e.response.code == '404'
-            @logger.info "#{component_type} #{component.name} not found. Cannot delete"
-          end
+      return unless components.any?
+
+      @logger.info "=== Deleting #{component_type} ==="
+      components.each do |component|
+        @logger.info "Deleting #{component.name}"
+        begin
+          chef_component = klass.load(component.name)
+          chef_component.destroy
+        rescue Net::HTTPServerException => e
+          raise e unless e.response.code == '404'
+          @logger.info "#{component_type} #{component.name} not found. Cannot delete"
         end
       end
     end
@@ -207,21 +199,21 @@ module RunningSushi
     def databag_upload(databags)
       # Databag upload special handling
       # Load pattern for databags does not follow standard
-      if databags.any?
-        @logger.info '=== Uploading databags ==='
-        databags.group_by { |x| x.name }.each do |dbname, dbs|
-          create_databag_if_missing(dbname)
-          dbs.map do |x|
-            @logger.info "Upload #{dbname} #{x.item}"
-            db_item = File.join(@databag_dir, dbname, "#{x.item}.json")
-            loader = Chef::Knife::Core::ObjectLoader.new(Chef::DataBagItem,
-                                                         @logger)
-            chef_db_item_json = loader.object_from_file(db_item)
-            chef_db_item = Chef::DataBagItem.new
-            chef_db_item.data_bag(dbname)
-            chef_db_item.raw_data = chef_db_item_json
-            chef_db_item.save
-          end
+      return unless databags.any?
+
+      @logger.info '=== Uploading databags ==='
+      databags.group_by(&:name).each do |dbname, dbs|
+        create_databag_if_missing(dbname)
+        dbs.map do |x|
+          @logger.info "Upload #{dbname} #{x.item}"
+          db_item = File.join(@databag_dir, dbname, "#{x.item}.json")
+          loader = Chef::Knife::Core::ObjectLoader.new(Chef::DataBagItem,
+                                                        @logger)
+          chef_db_item_json = loader.object_from_file(db_item)
+          chef_db_item = Chef::DataBagItem.new
+          chef_db_item.data_bag(dbname)
+          chef_db_item.raw_data = chef_db_item_json
+          chef_db_item.save
         end
       end
     end
@@ -237,96 +229,88 @@ module RunningSushi
     end
 
     def databag_delete(databags)
-      if databags.any?
-        @logger.info '=== Deleting databag items ==='
-        databags.group_by { |x| x.name }.each do |dbname, dbs|
-          dbs.map do |x|
-            @logger.info "Delete #{dbname} #{x.item}"
-            begin
-              chef_db_item = Chef::DataBagItem.load(dbname, x.item)
-              chef_db_item.destroy(dbname, x.item)
-            rescue Net::HTTPServerException => e
-              raise e unless e.response.code == '404'
-              @logger.info "#{x.item} not found. Cannot delete"
-            end
+      return unless databags.any?
+
+      @logger.info '=== Deleting databag items ==='
+      databags.group_by(&:name).each do |dbname, dbs|
+        dbs.map do |x|
+          @logger.info "Delete #{dbname} #{x.item}"
+          begin
+            chef_db_item = Chef::DataBagItem.load(dbname, x.item)
+            chef_db_item.destroy(dbname, x.item)
+          rescue Net::HTTPServerException => e
+            raise e unless e.response.code == '404'
+            @logger.info "#{x.item} not found. Cannot delete"
           end
-          delete_databag_if_empty(dbname)
         end
+        delete_databag_if_empty(dbname)
       end
     end
 
     def delete_databag_if_empty(databag)
-      begin
-        if Chef::DataBag.load(databag).any?
-          return
-        end
-        @logger.info "Deleting empty databag #{databag}"
-        chef_databag = Chef::DataBag.new
-        chef_databag.name(databag)
-        chef_databag.destroy
-      rescue Net::HTTPServerException => e
-        raise e unless e.response.code == '404'
-        @logger.info "#{databag} not found. Cannot delete"
-      end
+      return if Chef::DataBag.load(databag).any?
+
+      @logger.info "Deleting empty databag #{databag}"
+      chef_databag = Chef::DataBag.new
+      chef_databag.name(databag)
+      chef_databag.destroy
+    rescue Net::HTTPServerException => e
+      raise e unless e.response.code == '404'
+      @logger.info "#{databag} not found. Cannot delete"
     end
 
     def cookbook_upload(cookbooks)
       # Upload cookbooks using Chef cookbook uploader
-      if cookbooks.any?
-        @logger.info '=== Uploading cookbooks ==='
-        cookbooks.each do |cb|
-          @logger.info " Uploading #{cb}"
+      return unless cookbooks.any?
 
-          # Load cookbook
-          full_cb_path = File.join(@base_dir, cb.cookbook_dir, cb.name)
-          cb_version_loader = \
-            Chef::Cookbook::CookbookVersionLoader.new(full_cb_path)
-          cb_version_loader.load_cookbooks
+      @logger.info '=== Uploading cookbooks ==='
+      cookbooks.each do |cb|
+        @logger.info " Uploading #{cb}"
 
-          # Handle versioned tagged cookbook by extracting name
-          # from cookbook dir
-          # Currently (Chef 11) Knife uses dir name as cookbook name
-          cb_name, _ = cookbook_info(cb)
-          cb_version_loader.instance_variable_set(:@cookbook_name, cb_name)
-          cb_version = cb_version_loader.cookbook_version
-          chef_cb_uploader = Chef::CookbookUploader.new(cb_version, {})
-          chef_cb_uploader.upload_cookbooks
+        # Load cookbook
+        full_cb_path = File.join(@base_dir, cb.cookbook_dir, cb.name)
+        cb_version_loader = \
+          Chef::Cookbook::CookbookVersionLoader.new(full_cb_path)
+        cb_version_loader.load_cookbooks
 
-        end
+        # Handle versioned tagged cookbook by extracting name
+        # from cookbook dir
+        # Currently (Chef 11) Knife uses dir name as cookbook name
+        cb_name, = cookbook_info(cb)
+        cb_version_loader.instance_variable_set(:@cookbook_name, cb_name)
+        cb_version = cb_version_loader.cookbook_version
+        chef_cb_uploader = Chef::CookbookUploader.new(cb_version, {})
+        chef_cb_uploader.upload_cookbooks
       end
     end
 
     def cookbook_delete(cookbooks)
       # Delete cookbooks using knife
-      if cookbooks.any?
-        @logger.info '=== Deleting cookbooks ==='
+      return unless cookbooks.any?
 
-        cookbooks.each do |cb|
-          @logger.info " Deleting #{cb}"
-          cb_name, cb_version = cookbook_info(cb)
-          chef_cb_deleter = Chef::Knife::CookbookDelete.new
-          Chef::Knife::CookbookDelete.load_deps
-          chef_cb_deleter.config[:purge] = true
-          chef_cb_deleter.cookbook_name = cb_name
+      @logger.info '=== Deleting cookbooks ==='
 
-          begin
+      cookbooks.each do |cb|
+        @logger.info " Deleting #{cb}"
+        cb_name, cb_version = cookbook_info(cb)
+        chef_cb_deleter = Chef::Knife::CookbookDelete.new
+        Chef::Knife::CookbookDelete.load_deps
+        chef_cb_deleter.config[:purge] = true
+        chef_cb_deleter.cookbook_name = cb_name
 
-            if cb_version
-              @logger.info " Deleting #{cb_version}"
-              chef_cb_deleter.delete_version_without_confirmation(cb_version)
-            else
-              @logger.info ' Deleting all'
-              chef_cb_deleter.delete_all_without_confirmation
-            end
-
-          rescue Net::HTTPServerException => e
-            raise e unless e.response.code == '404'
-            @logger.info "#{cb_name} #{cb_version} not found. Cannot delete"
+        begin
+          if cb_version
+            @logger.info " Deleting #{cb_version}"
+            chef_cb_deleter.delete_version_without_confirmation(cb_version)
+          else
+            @logger.info ' Deleting all'
+            chef_cb_deleter.delete_all_without_confirmation
           end
+        rescue Net::HTTPServerException => e
+          raise e unless e.response.code == '404'
+          @logger.info "#{cb_name} #{cb_version} not found. Cannot delete"
         end
-
       end
-
     end
 
     def cookbook_info(cookbook)
@@ -353,10 +337,10 @@ module RunningSushi
         if chef_node.normal['running_sushi']['checkpoint'] != checkpoint
           @logger.info " Upload verify of #{node} failed. Reuploading"
           return false
-        else
-          return true
         end
-      rescue Exception => e
+
+        return true
+      rescue StandardError
         @logger.info " Upload verify of #{node} failed. Reuploading"
         return false
       end
