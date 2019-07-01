@@ -2,16 +2,13 @@
 
 ## Intro
 
-Welcome to Running Sushi, software to keep cookbooks, clients, databags, environments, nodes and roles in
-sync between a Git repo and a Chef Server. The idea is that if you have
-multiple, distinct Chef Server instances that should all be identical or track a specific part of a Chef Git repo, they can all run this script in cron. The script uses proper locking, so you should be
-able to run it every minute.
+Welcome to Running Sushi, software to keep cookbooks, clients, databags, environments, nodes and roles in sync between a Git repo and a Chef Server. The idea is that if you have multiple, distinct Chef Server instances that should all be identical or track a specific part of a Chef Git repo, they can all run this script in cron. The script uses proper locking, so you should be able to run it every minute.
 
 Running Sushi is derived from Facebook's [Grocery Delivery](https://github.com/facebook/grocery-delivery) with the following changes:
 
  * Clients, environments and nodes can be tracked as well
  * Cookbook versioning can be used by version tag post pending cookbook dirs
- * It is possible to segment the repo in parts to be tracked by different Chef Servers (such a segment is termed "pod" in following documentation)
+ * It is possible to segment the repo in parts to be tracked by different Chef Servers (such a segment is termed "pod" in the following documentation)
  * Uses the Chef Server API so no knife config is needed
  * Only Git is supported
 
@@ -19,9 +16,7 @@ Running Sushi is derived from Facebook's [Grocery Delivery](https://github.com/f
 
 ## Prerequisites
 
-Running Sushi is a particular way of managing your Chef infrastructure,
-and it assumes you follow that model consistently. Here are the basic
-principals:
+Running Sushi is a particular way of managing your Chef infrastructure, and it assumes you follow that model consistently. Here are the basic principals:
 
 * Checkins are live immediately (which implies code review before merge)
 * You want all your Chef Servers in sync with the Git repo
@@ -55,10 +50,7 @@ now Running Sushi can be executed as
 
 ## Config file
 
-The default config file is `/etc/chef/running_sushi_config.rb` but you may use -c to specify
-another. The config file works the same as client.rb does for Chef - there
-are a series of keywords that take an argument and anything else is just
-standard Ruby.
+The default config file is `/etc/chef/running_sushi_config.rb` but you may use -c to specify another. The config file works the same as client.rb does for Chef - there are a series of keywords that take an argument and anything else is just standard Ruby.
 
 All command-line options are available in the config file:
 
@@ -71,31 +63,21 @@ All command-line options are available in the config file:
 
 In addition the following are also available:
 
-* master_path - The top-level path for Running Sushi's work. Most other
-  paths are relative to this. Default: `/var/chef/running_sushi_work`
+* master_path - The top-level path for Running Sushi's work. Most other paths are relative to this. Default: `/var/chef/running_sushi_work`
 * repo_url - The URL to clone/checkout (Git shallow clone) if it doesn't exist. Default: `nil`
-* reponame - The relative directory to check the repo out to, inside of
-  `master_path`. Default: `ops`
+* reponame - The relative directory to check the repo out to, inside of `master_path`. Default: `ops`
 * pod_name - Name of subdir to match in environments, nodes and clients. Default: `nil` which means no filtering.
 * user - username of the Chef uploader. Default: `admin`
 * pem - Chef client key of the Chef uploader. . Default: `/etc/chef-server/admin.pem`
 * chef\_server\_url - URL of the Chef Server to upload to. Default: `https://127.0.0.1`
-* client_path A directory to find clients in relative to `reponame`. Default:
-  `clients`
-* cookbook_paths - An array of directories that contain cookbooks relative to
-  `reponame`. Default: `['cookbooks']`
-* databag_path - A directory to find databags in relative to `reponame`.
-  Default: `data_bags`
-* environment_path - A directory to find environments in relative to `reponame`.
-  Default: `environments`
-* node_path - A directory to find nodes in relative to `reponame`. Default:
-  `nodes`
-* role_path - A directory to find roles in relative to `reponame`. Default:
-  `roles`
-* role\_local\_path - A directory to find pod specific roles in relative to `reponame`. Default:
-  `roles_local`
-* rev_checkpoint - Name of the file to store the last-uploaded revision,
-  relative to `reponame`. Default: `running_sushi_revision`
+* client_path A directory to find clients in relative to `reponame`. Default: `clients`
+* cookbook_paths - An array of directories that contain cookbooks relative to `reponame`. Default: `['cookbooks']`
+* databag_path - A directory to find databags in relative to `reponame`.  Default: `data_bags`
+* environment_path - A directory to find environments in relative to `reponame`.  Default: `environments`
+* node_path - A directory to find nodes in relative to `reponame`. Default: `nodes`
+* role_path - A directory to find roles in relative to `reponame`. Default: `roles`
+* role\_local\_path - A directory to find pod specific roles in relative to `reponame`. Default: `roles_local`
+* rev_checkpoint - Name of the file to store the last-uploaded revision, relative to `reponame`. Default: `running_sushi_revision`
 * plugin_path - Path to plugin file. Default: `/etc/running_sushi_config_plugin.rb`
 
 ## Usage
