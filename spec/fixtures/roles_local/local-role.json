@@ -1,0 +1,7 @@
+{
+  "name": "local-role",
+  "description": "Integration test LOCAL role",
+  "run_list": [],
+  "default_attributes": {},
+  "override_attributes": {}
+}

@@ -1,0 +1,5 @@
+{
+  "name": "test-client",
+  "admin": true,
+  "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArotat3dXmFE+CqUlW9iv\nM43YqDxq8Gj49pGdpwhBpTU67dlqHcCNbq8GMjGqsltcQg2afn7tHIptchqj5dY3\nLcZG56VgMNRRpmu2nf2cBnpESLQwm6vXn34LbpW1aPDtsnvHsj0qz7Tay/c0+wPv\nQQO12W74ow8/Zg5cIFQqfMVlt3WUTLkV5BUFkSdEjN29w5y4qSn7l8vIAEh4l+vd\nU82c2nWGSuW6n7TbcdaVfBl/0+jOM7DEnEPxx5j7QKuvrz4MdK4mwlZK0e/Rz9KQ\n5+nJfO5o0LXFE/Ub8t+wbyjnsmZeWGr/3DqfYU0pH8tBQk1/8GfWQNFqlW1GZv2D\nlQIDAQAB\n-----END PUBLIC KEY-----\n"
+}

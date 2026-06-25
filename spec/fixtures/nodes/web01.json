@@ -1,0 +1,6 @@
+{
+  "name": "web01",
+  "chef_environment": "_default",
+  "normal": {},
+  "run_list": []
+}

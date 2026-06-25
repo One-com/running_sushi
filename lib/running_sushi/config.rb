@@ -1,8 +1,9 @@
-# Encoding: utf-8
+# frozen_string_literal: true
+
 # vim: syntax=ruby:expandtab:shiftwidth=2:softtabstop=2:tabstop=2
 
 # Copyright 2013-2014 Facebook
-# Copyright 2014-present One.com
+# Copyright 2017-present One.com
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,6 +51,7 @@ module RunningSushi
     node_checkpoint 'node_upload_checkpoint'
     vcs_type 'git'
     vcs_path nil
+    ssl_verify_mode :verify_peer
     plugin_path '/etc/running_sushi_plugin.rb'
   end
 end

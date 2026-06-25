@@ -1,5 +1,6 @@
-#!/opt/chef/embedded/bin/ruby
-# Encoding: utf-8
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
 # vim: syntax=ruby:expandtab:shiftwidth=2:softtabstop=2:tabstop=2
 
 # Copyright 2013-2014 Facebook
@@ -17,7 +18,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'chef_diff/repo/svn'
 require 'chef_diff/repo/git'
 require 'chef_diff/changeset'
 require 'running_sushi/config'
@@ -29,8 +29,17 @@ require 'optparse'
 require 'logger'
 require 'json'
 
-# rubocop:disable GlobalVars
+# $success, $status_msg, $lockfileh are script-level globals intentionally:
+# - $success/$status_msg are set inside `main` but consumed by the `at_exit`
+#   handler registered in `setup_config` (before main runs).  A closure over
+#   locals would capture the initial nil/false values, not the updated ones.
+# - $lockfileh is opened in acquire_lock and must remain reachable for the
+#   entire process lifetime; closing it would release the flock.  The script
+#   top-level has no `self` to store state on, so a global is the only option.
+# rubocop:disable Style/GlobalVars
 
+# Proxy for changeset entries (cookbook, role, node, etc.) used to fake a
+# changeset entry when re-uploading nodes from a previous checkpoint.
 class ChangeProxy
   attr_accessor :full_name
 
@@ -55,10 +64,10 @@ def action(msg)
   end
 end
 
-def get_lock
+def acquire_lock
   RunningSushi::Log.warn('Attempting to acquire lock')
   $lockfileh = File.open(RunningSushi::Config.lockfile,
-                         File::RDWR | File::CREAT, 0600)
+                         File::RDWR | File::CREAT, 0o600)
   $lockfileh.flock(File::LOCK_EX)
   RunningSushi::Log.warn('Lock acquired')
 end
@@ -68,7 +77,7 @@ def write_pidfile
 end
 
 def delete_pidfile
-  File.delete(RunningSushi::Config.pidfile) if File.exist?(RunningSushi::Config.pidfile)
+  FileUtils.rm_f(RunningSushi::Config.pidfile)
 end
 
 def checkpoint_path
@@ -82,7 +91,7 @@ end
 
 def read_checkpoint
   RunningSushi::Log.debug("Reading #{checkpoint_path}")
-  File.exists?(checkpoint_path) ? File.read(checkpoint_path).strip : nil
+  File.exist?(checkpoint_path) ? File.read(checkpoint_path).strip : nil
 end
 
 def node_checkpoint_path
@@ -97,38 +106,38 @@ end
 
 def read_node_checkpoint
   RunningSushi::Log.debug("Reading #{node_checkpoint_path}")
-  if File.exists?(node_checkpoint_path)
-    upload_checkpoint = JSON.parse(File.read(node_checkpoint_path))
-    checkpoint = upload_checkpoint[0]
-    nodes = upload_checkpoint[1]
-    return checkpoint, nodes
-  else
-    return nil, []
-  end
+  return nil, [] unless File.exist?(node_checkpoint_path)
+
+  upload_checkpoint = JSON.parse(File.read(node_checkpoint_path))
+  checkpoint = upload_checkpoint[0]
+  nodes = upload_checkpoint[1]
+  [checkpoint, nodes]
 end
 
-def get_pod_config
-  node_dir = RunningSushi::Config.node_path
-  client_dir = RunningSushi::Config.client_path
-  environment_dir = RunningSushi::Config.environment_path
-  role_local_dir = RunningSushi::Config.role_local_path
+def pod_config
+  dirs = [
+    RunningSushi::Config.node_path,
+    RunningSushi::Config.client_path,
+    RunningSushi::Config.environment_path,
+    RunningSushi::Config.role_local_path
+  ]
+  return dirs unless RunningSushi::Config.pod_name
 
-  if RunningSushi::Config.pod_name
-    node_dir = File.join(node_dir, RunningSushi::Config.pod_name.to_s)
-    client_dir = File.join(client_dir, RunningSushi::Config.pod_name.to_s)
-    environment_dir = File.join(environment_dir, RunningSushi::Config.pod_name.to_s)
-    role_local_dir = File.join(role_local_dir, RunningSushi::Config.pod_name.to_s)
-  end
-
-  return node_dir, client_dir, environment_dir, role_local_dir
+  pod = RunningSushi::Config.pod_name.to_s
+  dirs.map { |d| File.join(d, pod) }
 end
 
+# chef_upload is the central dispatch method: it computes the changeset,
+# re-queues nodes that failed their previous upload, and fans out to 14 typed
+# upload/delete operations.  Extracting sub-methods would require passing ~10
+# interdependent locals as arguments, adding more indirection than clarity.
+# rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 def chef_upload(knife, repo, checkpoint, local_head)
   RunningSushi::Log.warn(
     "Determing changes... from #{checkpoint} to #{local_head}"
   )
 
-  node_dir, client_dir, environment_dir, role_local_dir = get_pod_config
+  node_dir, client_dir, environment_dir, role_local_dir = pod_config
 
   begin
     changeset = ChefDiff::Changeset.new(
@@ -149,7 +158,7 @@ def chef_upload(knife, repo, checkpoint, local_head)
       role_local_dir:
         role_local_dir,
       role_dir:
-        RunningSushi::Config.role_path,
+        RunningSushi::Config.role_path
     )
   rescue ChefDiff::Changeset::ReferenceError
     RunningSushi::Log.error('Repo error, invalid revision, exiting')
@@ -158,25 +167,25 @@ def chef_upload(knife, repo, checkpoint, local_head)
 
   deleted_cookbooks = changeset.cookbooks.select { |x| x.status == :deleted }
   added_cookbooks = changeset.cookbooks.select do |x|
-    x.status == :modified || x.status == :created
+    %i[modified created].include?(x.status)
   end
   deleted_roles = changeset.roles.select do |x|
-        x.status == :deleted
+    x.status == :deleted
   end
   added_roles = changeset.roles.select do |x|
-    x.status == :modified  || x.status == :created
+    %i[modified created].include?(x.status)
   end
-  deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted  }
+  deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted }
   added_roles_local = changeset.roles_local.select do |x|
-    x.status == :modified  || x.status == :created
+    %i[modified created].include?(x.status)
   end
   deleted_databags = changeset.databags.select { |x| x.status == :deleted }
   added_databags = changeset.databags.select do |x|
-    x.status == :modified || x.status == :created
+    %i[modified created].include?(x.status)
   end
   deleted_nodes = changeset.nodes.select { |x| x.status == :deleted }
   added_nodes = changeset.nodes.select do |x|
-    x.status == :modified || x.status == :created
+    %i[modified created].include?(x.status)
   end
 
   # Check if last node upload was successful.
@@ -189,50 +198,47 @@ def chef_upload(knife, repo, checkpoint, local_head)
     reupload_nodes = verify_nodes.reject { |x| knife.verify_node_upload(File.split(x)[-1], verify_checkpoint) }
     reupload_nodes.each do |x|
       node_file = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame, node_dir) + "/#{x}.json"
-      if File.file?(node_file)
-        # Only re-upload if node has not been deleted from repo
-        node_proxy = ChangeProxy.new(x)
-        added_nodes.push(node_proxy)
-      end
+      next unless File.file?(node_file)
+
+      # Only re-upload if node has not been deleted from repo
+      node_proxy = ChangeProxy.new(x)
+      added_nodes.push(node_proxy)
     end
   end
 
   deleted_environments = changeset.environments.select { |x| x.status == :deleted }
   added_environments = changeset.environments.select do |x|
-    x.status == :modified || x.status == :created
+    %i[modified created].include?(x.status)
   end
   deleted_clients = changeset.clients.select { |x| x.status == :deleted }
   added_clients = changeset.clients.select do |x|
-    x.status == :modified || x.status == :created
+    %i[modified created].include?(x.status)
   end
 
   # Reject upload of role if a local role exist
-  if added_roles
-    added_roles.reject! do |x|
-      localrolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame, role_local_dir) + "/#{x.full_name}.json"
-      File.file?(localrolefile)
-    end
+  added_roles&.reject! do |x|
+    localrolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame,
+                              role_local_dir) + "/#{x.full_name}.json"
+    File.file?(localrolefile)
   end
 
   # Reject deletion of role if local role exists
-  if deleted_roles
-    deleted_roles.reject! do |x|
-      localrolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame, role_local_dir) + "/#{x.full_name}.json"
-      File.file?(localrolefile)
-    end
+  deleted_roles&.reject! do |x|
+    localrolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame,
+                              role_local_dir) + "/#{x.full_name}.json"
+    File.file?(localrolefile)
   end
 
   # When deleting a local role upload global if exists (Atomic)
-  if deleted_roles_local
-    deleted_roles_local.each do |x|
-      rolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame, RunningSushi::Config.role_path) + "/#{x.name}.json"
-      if File.file?(rolefile)
-        role_proxy = ChangeProxy.new(x.name)
-        added_roles.push(role_proxy)
-        deleted_roles_local.reject! do |y|
-          x.name == y.name
-        end
-      end
+  deleted_roles_local&.each do |x|
+    rolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame,
+                         RunningSushi::Config.role_path) + "/#{x.name}.json"
+    next unless File.file?(rolefile)
+
+    role_proxy = ChangeProxy.new(x.name)
+    added_roles.push(role_proxy)
+    deleted_roles_local.reject! do |y|
+      x.name == y.name
     end
   end
 
@@ -250,7 +256,7 @@ def chef_upload(knife, repo, checkpoint, local_head)
     'Added environments' => added_environments,
     'Deleted environments' => deleted_environments,
     'Added clients' => added_clients,
-    'Deleted clients' => deleted_clients,
+    'Deleted clients' => deleted_clients
   }.each do |msg, list|
     RunningSushi::Log.warn("#{msg}: #{list}") if list
   end
@@ -276,36 +282,45 @@ def chef_upload(knife, repo, checkpoint, local_head)
   knife.client_delete(deleted_clients) if deleted_clients
   knife.client_upload(added_clients) if added_clients
 end
+# rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
+# Method length comes from the RunningSushi::Knife.new keyword-argument list:
+# each of the 10 directory options maps a Config path to a base-dir-relative
+# path and must be spelled out explicitly.  Extracting a build_knife helper
+# would just relocate the same line-count without improving clarity.
+# rubocop:disable Metrics/AbcSize, Metrics/MethodLength
 def upload_changed(repo, checkpoint)
   local_head = repo.head_rev
   base_dir = File.join(RunningSushi::Config.master_path,
                        RunningSushi::Config.reponame)
 
-  node_dir, client_dir, environment_dir, role_local_dir = get_pod_config
+  node_dir, client_dir, environment_dir, role_local_dir = pod_config
 
   knife = RunningSushi::Knife.new(
-      logger: RunningSushi::Log,
-      config: RunningSushi::Config.knife_config,
-      bin: RunningSushi::Config.knife_bin,
-      master_path: RunningSushi::Config.master_path,
-      base_dir: base_dir,
-      client_dir: File.join(base_dir, client_dir),
-      cookbook_dirs: RunningSushi::Config.cookbook_paths.map do |x|
-        File.join(base_dir, x)
-      end,
-      databag_dir: File.join(base_dir, RunningSushi::Config.databag_path),
-      environment_dir: File.join(base_dir, environment_dir),
-      node_dir: File.join(base_dir, node_dir),
-      role_dir: File.join(base_dir, RunningSushi::Config.role_path),
-      role_local_dir: File.join(base_dir, role_local_dir),
+    logger: RunningSushi::Log,
+    master_path: RunningSushi::Config.master_path,
+    base_dir: base_dir,
+    client_dir: File.join(base_dir, client_dir),
+    cookbook_dirs: RunningSushi::Config.cookbook_paths.map do |x|
+      File.join(base_dir, x)
+    end,
+    databag_dir: File.join(base_dir, RunningSushi::Config.databag_path),
+    environment_dir: File.join(base_dir, environment_dir),
+    node_dir: File.join(base_dir, node_dir),
+    role_dir: File.join(base_dir, RunningSushi::Config.role_path),
+    role_local_dir: File.join(base_dir, role_local_dir)
   )
 
   chef_upload(knife, repo, checkpoint, local_head)
 
   local_head
 end
+# rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
+# OptionParser must enumerate all 7 CLI flags; each option occupies 2-5 lines.
+# BlockLength: the OptionParser block is 27 lines (limit 25) — splitting it
+# into sub-methods would add no clarity.
+# rubocop:disable Metrics/AbcSize, Metrics/BlockLength, Metrics/MethodLength
 def setup_config
   options = {}
   OptionParser.new do |opts|
@@ -315,17 +330,17 @@ def setup_config
     end
     opts.on('-v', '--verbosity', 'Verbosity level. Twice for debug.') do
       # If -vv is supplied this block is executed twice
-      if options[:verbosity]
-        options[:verbosity] = ::Logger::DEBUG
-      else
-        options[:verbosity] = ::Logger::INFO
-      end
+      options[:verbosity] = if options[:verbosity]
+                              Logger::DEBUG
+                            else
+                              Logger::INFO
+                            end
     end
     opts.on('-T', '--timestamp', 'Timestamp output') do |s|
       options[:timestamp] = s
     end
     opts.on('-c', '--config-file FILE', 'config file') do |s|
-      unless File.exists?(File.expand_path(s))
+      unless File.exist?(File.expand_path(s))
         RunningSushi::Log.error("Config file #{s} not found.")
         exit(2)
       end
@@ -338,14 +353,10 @@ def setup_config
       options[:pidfile] = s
     end
   end.parse!
-  if File.exists?(File.expand_path(options[:config_file]))
-    RunningSushi::Config.from_file(options[:config_file])
-  end
+  RunningSushi::Config.from_file(options[:config_file]) if File.exist?(File.expand_path(options[:config_file]))
   RunningSushi::Config.merge!(options)
   RunningSushi::Log.verbosity = RunningSushi::Config.verbosity
-  if RunningSushi::Config.dry_run
-    RunningSushi::Log.warn('Dryrun mode activated, no changes will be made.')
-  end
+  RunningSushi::Log.warn('Dryrun mode activated, no changes will be made.') if RunningSushi::Config.dry_run
   RunningSushi::Hooks.get(RunningSushi::Config.plugin_path)
   at_exit do
     RunningSushi::Hooks.atexit(RunningSushi::Config.dry_run,
@@ -357,8 +368,9 @@ def setup_config
   Chef::Config[:chef_server_url] = RunningSushi::Config.chef_server_url
   Chef::Config[:ssl_verify_mode] = RunningSushi::Config.ssl_verify_mode || :verify_peer
 end
+# rubocop:enable Metrics/AbcSize, Metrics/BlockLength, Metrics/MethodLength
 
-def get_repo
+def fetch_repo
   repo_path = File.join(RunningSushi::Config.master_path,
                         RunningSushi::Config.reponame)
   r = ChefDiff::Repo.get(RunningSushi::Config.vcs_type, repo_path,
@@ -367,65 +379,72 @@ def get_repo
   r
 end
 
-setup_config
+# Top-level script entry point: all branches (clone vs update, dry-run, no-repo,
+# no-change, upload failure) are load-bearing and must remain in one function
+# so the control-flow stays readable as a narrative.
+# rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+def main
+  setup_config
 
-RunningSushi::Hooks.preflight_checks(RunningSushi::Config.dry_run)
+  RunningSushi::Hooks.preflight_checks(RunningSushi::Config.dry_run)
 
-get_lock
-write_pidfile
-repo = get_repo
+  acquire_lock
+  write_pidfile
+  repo = fetch_repo
 
-RunningSushi::Hooks.prerun(RunningSushi::Config.dry_run)
+  RunningSushi::Hooks.prerun(RunningSushi::Config.dry_run)
 
-if repo.exists?
-  action('Updating repo')
-  repo.update unless RunningSushi::Config.dry_run
-else
-  unless RunningSushi::Config.repo_url
-    RunningSushi::Log.error(
-      'No repo URL was specified, and no repo is checked out'
+  if repo.exists?
+    action('Updating repo')
+    repo.update unless RunningSushi::Config.dry_run
+  else
+    unless RunningSushi::Config.repo_url
+      RunningSushi::Log.error(
+        'No repo URL was specified, and no repo is checked out'
+      )
+      exit(1)
+    end
+    action('Cloning repo')
+    repo.checkout(RunningSushi::Config.repo_url) unless RunningSushi::Config.dry_run
+  end
+
+  RunningSushi::Hooks.post_repo_up(RunningSushi::Config.dry_run)
+
+  if RunningSushi::Config.dry_run && !repo.exists?
+    RunningSushi::Log.warn(
+      'In dryrun mode, with no repo, there\'s not much I can dryrun'
     )
-    exit(1)
+    RunningSushi::Hooks.postrun(RunningSushi::Config.dry_run, true,
+                                'dryrun mode')
+    exit
   end
-  action('Cloning repo')
-  unless RunningSushi::Config.dry_run
-    repo.checkout(RunningSushi::Config.repo_url)
-  end
-end
 
-RunningSushi::Hooks.post_repo_up(RunningSushi::Config.dry_run)
-
-if RunningSushi::Config.dry_run && !repo.exists?
-  RunningSushi::Log.warn(
-    'In dryrun mode, with no repo, there\'s not much I can dryrun'
-  )
-  RunningSushi::Hooks.postrun(RunningSushi::Config.dry_run, true,
-                              'dryrun mode')
-  exit
-end
-
-checkpoint = read_checkpoint
-node_checkpoint, uploaded_nodes = read_node_checkpoint
-if repo.exists? && repo.head_rev == checkpoint && uploaded_nodes.size == 0
-  RunningSushi::Log.warn('Repo has not changed and no node uploads to check, nothing to do...')
-  $success = true
-  $status_msg = "Success at #{checkpoint}"
-else
-  begin
-    ver = upload_changed(repo, checkpoint)
-    write_checkpoint(ver)
+  checkpoint = read_checkpoint
+  _, uploaded_nodes = read_node_checkpoint
+  if repo.exists? && repo.head_rev == checkpoint && uploaded_nodes.empty?
+    RunningSushi::Log.warn('Repo has not changed and no node uploads to check, nothing to do...')
     $success = true
-    $status_msg = "Success at #{ver}"
-  rescue => e
-    $status_msg = e.message
-    e.backtrace.each do |line|
-      RunningSushi::Log.error(line)
+    $status_msg = "Success at #{checkpoint}"
+  else
+    begin
+      ver = upload_changed(repo, checkpoint)
+      write_checkpoint(ver)
+      $success = true
+      $status_msg = "Success at #{ver}"
+    rescue StandardError => e
+      $status_msg = e.message
+      e.backtrace.each do |line|
+        RunningSushi::Log.error(line)
+      end
     end
   end
-end
 
-RunningSushi::Log.warn($status_msg)
-RunningSushi::Hooks.postrun(RunningSushi::Config.dry_run, $success,
-                            $status_msg)
-delete_pidfile
-# rubocop:enable GlobalVars
+  RunningSushi::Log.warn($status_msg)
+  RunningSushi::Hooks.postrun(RunningSushi::Config.dry_run, $success,
+                              $status_msg)
+  delete_pidfile
+end
+# rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+main
+# rubocop:enable Style/GlobalVars

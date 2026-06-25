@@ -1,8 +1,9 @@
-# Encoding: utf-8
+# frozen_string_literal: true
+
 # vim: syntax=ruby:expandtab:shiftwidth=2:softtabstop=2:tabstop=2
 
 # Copyright 2013-2014 Facebook
-# Copyright 2014-present One.com
+# Copyright 2017-present One.com
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +22,10 @@ require 'logger'
 
 module RunningSushi
   # Logging wrapper
-  # rubocop:disable ClassVars
+  # @@init and @@level track module-level state; Log is a standalone namespace
+  # never mixed into other classes, so the class-variable inheritance hazard
+  # does not apply.
+  # rubocop:disable Style/ClassVars
   module Log
     @@init = false
     @@level = Logger::WARN
@@ -35,6 +39,15 @@ module RunningSushi
       @@level = val
     end
 
+    def self.level
+      @@level
+    end
+
+    def self.reset!
+      @@init = false
+      @@level = Logger::WARN
+    end
+
     def self.logit(level, msg)
       init unless @@init
       # You can't do `Syslog.log(level, msg)` because if there is a
@@ -45,33 +58,28 @@ module RunningSushi
     end
 
     def self.debug(msg)
-      if @@level == Logger::DEBUG
-        msg.prepend('DEBUG: ')
-        logit(Syslog::LOG_DEBUG, msg)
-      end
+      return unless @@level == Logger::DEBUG
+
+      logit(Syslog::LOG_DEBUG, "DEBUG: #{msg}")
     end
 
     def self.info(msg)
-      if @@level <= Logger::INFO
-        msg.prepend('INFO: ')
-        logit(Syslog::LOG_INFO, msg)
-      end
+      return unless @@level <= Logger::INFO
+
+      logit(Syslog::LOG_INFO, "INFO: #{msg}")
     end
 
     def self.warn(msg)
-      msg.prepend('WARN: ')
-      logit(Syslog::LOG_WARNING, msg)
+      logit(Syslog::LOG_WARNING, "WARN: #{msg}")
     end
 
     def self.error(msg)
-      msg.prepend('ERROR: ')
-      logit(Syslog::LOG_ERR, msg)
+      logit(Syslog::LOG_ERR, "ERROR: #{msg}")
     end
 
     def self.fatal(msg)
-      msg.prepend('CRITICAL: ')
-      logit(Syslog::LOG_CRIT, msg)
+      logit(Syslog::LOG_CRIT, "CRITICAL: #{msg}")
     end
   end
-  # rubocop:enable ClassVars
+  # rubocop:enable Style/ClassVars
 end
