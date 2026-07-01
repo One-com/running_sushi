@@ -1,0 +1,7 @@
+{
+  "name": "test-env",
+  "description": "Integration test environment",
+  "default_attributes": {},
+  "override_attributes": {},
+  "cookbook_versions": {}
+}

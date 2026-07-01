@@ -1,0 +1,14 @@
+AllCops:
+  TargetRubyVersion: 2.7
+  NewCops: enable
+  SuggestExtensions: false
+
+# RSpec example groups and the gemspec are naturally long blocks.
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - '*.gemspec'
+
+# Development dependencies are intentionally declared in the gemspec.
+Gemspec/DevelopmentDependencies:
+  EnforcedStyle: gemspec

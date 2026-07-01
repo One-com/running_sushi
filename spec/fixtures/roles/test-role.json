@@ -1,0 +1,7 @@
+{
+  "name": "test-role",
+  "description": "Integration test role",
+  "run_list": [],
+  "default_attributes": {},
+  "override_attributes": {}
+}

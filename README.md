@@ -15,7 +15,7 @@ Running Sushi is derived from Facebook's [Grocery Delivery](https://github.com/f
  * Uses the Chef Server API so no knife config is needed
  * Only Git is supported
 
-**Note**: This project was previously named "Chef Delivery" but has been renamed to avoid confusion with the unrelated [Chef Delivery](https://www.chef.io/delivery/) project. Currently executable name and configuration still reflects the old project name.
+**Note**: This project was previously named "Chef Delivery" but has been renamed to avoid confusion with the unrelated [Chef Delivery](https://www.chef.io/delivery/) project.
 
 ## Prerequisites
 
@@ -42,6 +42,13 @@ Running Sushi has been developed to address the following issues with the normal
 
 * Mixlib::Config
 * [chef_diff](https://github.com/One-com/chef_diff)
+
+## Testing
+
+```sh
+docker run --rm -v "$(pwd)":/app -w /app ruby:3.3 \
+  sh -c "bundle install && bundle exec rake"
+```
 
 ## Installation
 
@@ -96,7 +103,12 @@ In addition the following are also available:
   `roles_local`
 * rev_checkpoint - Name of the file to store the last-uploaded revision,
   relative to `reponame`. Default: `running_sushi_revision`
-* plugin_path - Path to plugin file. Default: `/etc/running_sushi_config_plugin.rb`
+* node_checkpoint - Name of the file used to track nodes that need upload
+  verification (guards against Chef client run race conditions). Relative to
+  `master_path`. Default: `node_upload_checkpoint`
+* ssl_verify_mode - SSL verification mode passed to the Chef API client.
+  Default: `:verify_peer`
+* plugin_path - Path to plugin file. Default: `/etc/running_sushi_plugin.rb`
 
 ## Usage
 
