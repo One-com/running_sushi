@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |s|
   s.name = 'running_sushi'
-  s.version = '0.7.2'
+  s.version = '0.8.0'
   s.platform = Gem::Platform::RUBY
   s.summary = 'Running Sushi'
   s.description = 'Utility for keeping Chef servers in sync with a repo'
@@ -18,14 +18,15 @@ Gem::Specification.new do |s|
             Dir.glob('bin/*')
   s.executables = 'running-sushi'
   s.license = 'Apache-2.0'
-  s.required_ruby_version = '>= 2.7'
-  s.add_dependency 'chef', '>= 16'
+  s.required_ruby_version = '>= 3.0'
+  s.add_dependency 'chef', '>= 17', '< 20'
   s.add_dependency 'chef_diff'
-  s.add_dependency 'knife', '>= 16', '< 19'
+  s.add_dependency 'knife', '>= 17', '< 20'
   s.add_dependency 'mixlib-config'
   s.add_development_dependency 'chef-zero'
   s.add_development_dependency 'rake'
   s.add_development_dependency 'rspec'
   s.add_development_dependency 'rubocop'
+  s.add_development_dependency 'rubocop-rspec'
   s.add_development_dependency 'simplecov'
 end

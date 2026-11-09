@@ -1,5 +1,8 @@
+plugins:
+  - rubocop-rspec
+
 AllCops:
-  TargetRubyVersion: 2.7
+  TargetRubyVersion: 3.0
   NewCops: enable
   SuggestExtensions: false
 
@@ -12,3 +15,9 @@ Metrics/BlockLength:
 # Development dependencies are intentionally declared in the gemspec.
 Gemspec/DevelopmentDependencies:
   EnforcedStyle: gemspec
+
+# These specs test the top-level methods of bin/running-sushi, which belong to
+# no class or module, so there is nothing to name in the describe.
+RSpec/DescribeClass:
+  Exclude:
+    - 'spec/**/sushi_*_spec.rb'

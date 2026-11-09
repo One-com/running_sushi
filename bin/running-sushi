@@ -24,6 +24,8 @@ require 'running_sushi/config'
 require 'running_sushi/logging'
 require 'running_sushi/hooks'
 require 'running_sushi/knife'
+require 'running_sushi/diff'
+require 'running_sushi/reconcile'
 require 'chef/config'
 require 'optparse'
 require 'logger'
@@ -37,20 +39,6 @@ require 'json'
 #   entire process lifetime; closing it would release the flock.  The script
 #   top-level has no `self` to store state on, so a global is the only option.
 # rubocop:disable Style/GlobalVars
-
-# Proxy for changeset entries (cookbook, role, node, etc.) used to fake a
-# changeset entry when re-uploading nodes from a previous checkpoint.
-class ChangeProxy
-  attr_accessor :full_name
-
-  def to_s
-    @full_name
-  end
-
-  def initialize(full_name)
-    @full_name = full_name
-  end
-end
 
 $success = false
 $status_msg = 'NO WORK DONE'
@@ -127,206 +115,214 @@ def pod_config
   dirs.map { |d| File.join(d, pod) }
 end
 
-# chef_upload is the central dispatch method: it computes the changeset,
-# re-queues nodes that failed their previous upload, and fans out to 14 typed
-# upload/delete operations.  Extracting sub-methods would require passing ~10
-# interdependent locals as arguments, adding more indirection than clarity.
-# rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+# The diff mode: applies to the Chef Server what changed in Git from
+# +checkpoint+ to +local_head+ (RunningSushi::Diff). Logs the plan, which is
+# dry-run's report, and fails before any write when a file to upload
+# contradicts its path (Knife#check_uploads).
 def chef_upload(knife, repo, checkpoint, local_head)
-  RunningSushi::Log.warn(
-    "Determing changes... from #{checkpoint} to #{local_head}"
-  )
+  locations = changeset_locations
+  changeset = diff_changeset(repo, checkpoint, local_head, locations)
+  plan = RunningSushi::Diff.plan(changeset, lazy_git_tree(repo, locations), knife,
+                                 local_roles: local_roles?, extra_nodes: unverified_nodes(knife))
+  RunningSushi::Diff.report(plan).each { |line| RunningSushi::Log.warn(line) }
 
-  node_dir, client_dir, environment_dir, role_local_dir = pod_config
+  # Everything above only reads (the diff, the checkout, and the server for
+  # node verification and for the cookbook versions to delete); everything
+  # below writes to the Chef Server. Dry-run stops here, after the plan has
+  # been logged as its report.
+  knife.check_uploads(plan.checks)
+  action('Applying changes to the Chef Server')
+  return if RunningSushi::Config.dry_run
 
-  begin
-    changeset = ChefDiff::Changeset.new(
-      RunningSushi::Log,
-      repo,
-      checkpoint,
-      local_head,
-      cookbook_dirs:
-        RunningSushi::Config.cookbook_paths,
-      client_dir:
-        client_dir,
-      databag_dir:
-        RunningSushi::Config.databag_path,
-      environment_dir:
-        environment_dir,
-      node_dir:
-        node_dir,
-      role_local_dir:
-        role_local_dir,
-      role_dir:
-        RunningSushi::Config.role_path
-    )
-  rescue ChefDiff::Changeset::ReferenceError
-    RunningSushi::Log.error('Repo error, invalid revision, exiting')
-    exit(2)
-  end
-
-  deleted_cookbooks = changeset.cookbooks.select { |x| x.status == :deleted }
-  added_cookbooks = changeset.cookbooks.select do |x|
-    %i[modified created].include?(x.status)
-  end
-  deleted_roles = changeset.roles.select do |x|
-    x.status == :deleted
-  end
-  added_roles = changeset.roles.select do |x|
-    %i[modified created].include?(x.status)
-  end
-  deleted_roles_local = changeset.roles_local.select { |x| x.status == :deleted }
-  added_roles_local = changeset.roles_local.select do |x|
-    %i[modified created].include?(x.status)
-  end
-  deleted_databags = changeset.databags.select { |x| x.status == :deleted }
-  added_databags = changeset.databags.select do |x|
-    %i[modified created].include?(x.status)
-  end
-  deleted_nodes = changeset.nodes.select { |x| x.status == :deleted }
-  added_nodes = changeset.nodes.select do |x|
-    %i[modified created].include?(x.status)
-  end
-
-  # Check if last node upload was successful.
-  # This is to workaround the builtin Chef racecondition of node content being overwritten
-  # by chef-client save-back if a node object is changed on the server during a client run
-  # on the node server
-  verify_checkpoint, verify_nodes = read_node_checkpoint
-  if verify_checkpoint
-    # Select nodes from checklist where the checkpoint on the Chef server is not correct
-    reupload_nodes = verify_nodes.reject { |x| knife.verify_node_upload(File.split(x)[-1], verify_checkpoint) }
-    reupload_nodes.each do |x|
-      node_file = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame, node_dir) + "/#{x}.json"
-      next unless File.file?(node_file)
-
-      # Only re-upload if node has not been deleted from repo
-      node_proxy = ChangeProxy.new(x)
-      added_nodes.push(node_proxy)
-    end
-  end
-
-  deleted_environments = changeset.environments.select { |x| x.status == :deleted }
-  added_environments = changeset.environments.select do |x|
-    %i[modified created].include?(x.status)
-  end
-  deleted_clients = changeset.clients.select { |x| x.status == :deleted }
-  added_clients = changeset.clients.select do |x|
-    %i[modified created].include?(x.status)
-  end
-
-  # Reject upload of role if a local role exist
-  added_roles&.reject! do |x|
-    localrolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame,
-                              role_local_dir) + "/#{x.full_name}.json"
-    File.file?(localrolefile)
-  end
-
-  # Reject deletion of role if local role exists
-  deleted_roles&.reject! do |x|
-    localrolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame,
-                              role_local_dir) + "/#{x.full_name}.json"
-    File.file?(localrolefile)
-  end
-
-  # When deleting a local role upload global if exists (Atomic)
-  deleted_roles_local&.each do |x|
-    rolefile = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame,
-                         RunningSushi::Config.role_path) + "/#{x.name}.json"
-    next unless File.file?(rolefile)
-
-    role_proxy = ChangeProxy.new(x.name)
-    added_roles.push(role_proxy)
-    deleted_roles_local.reject! do |y|
-      x.name == y.name
-    end
-  end
-
-  {
-    'Added cookbooks' => added_cookbooks,
-    'Deleted cookbooks' => deleted_cookbooks,
-    'Added roles' => added_roles,
-    'Deleted roles' => deleted_roles,
-    'Added local roles' => added_roles_local,
-    'Deleted local roles' => deleted_roles_local,
-    'Added databags' => added_databags,
-    'Deleted databags' => deleted_databags,
-    'Added nodes' => added_nodes,
-    'Deleted nodes' => deleted_nodes,
-    'Added environments' => added_environments,
-    'Deleted environments' => deleted_environments,
-    'Added clients' => added_clients,
-    'Deleted clients' => deleted_clients
-  }.each do |msg, list|
-    RunningSushi::Log.warn("#{msg}: #{list}") if list
-  end
-
-  knife.cookbook_delete(deleted_cookbooks) if deleted_cookbooks
-  knife.cookbook_upload(added_cookbooks) if added_cookbooks
-
-  knife.role_delete(deleted_roles) if deleted_roles
-  knife.role_local_delete(deleted_roles_local) if deleted_roles_local
-
-  knife.role_upload(added_roles) if added_roles
-  knife.role_local_upload(added_roles_local) if added_roles_local
-
-  knife.databag_delete(deleted_databags) if deleted_databags
-  knife.databag_upload(added_databags) if added_databags
-  knife.node_delete(deleted_nodes) if deleted_nodes
-  if added_nodes
-    knife.node_upload(added_nodes, local_head)
-    write_node_checkpoint(added_nodes, local_head)
-  end
-  knife.environment_delete(deleted_environments) if deleted_environments
-  knife.environment_upload(added_environments) if added_environments
-  knife.client_delete(deleted_clients) if deleted_clients
-  knife.client_upload(added_clients) if added_clients
+  RunningSushi::Diff.apply(knife, plan, local_head) { |nodes| write_node_checkpoint(nodes, local_head) }
 end
-# rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-# Method length comes from the RunningSushi::Knife.new keyword-argument list:
-# each of the 10 directory options maps a Config path to a base-dir-relative
-# path and must be spelled out explicitly.  Extracting a build_knife helper
-# would just relocate the same line-count without improving clarity.
-# rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+# The ChefDiff::Changeset from +checkpoint+ to +local_head+; exits when
+# either is not a revision of +repo+.
+def diff_changeset(repo, checkpoint, local_head, locations)
+  RunningSushi::Log.warn("Determing changes... from #{checkpoint} to #{local_head}")
+  ChefDiff::Changeset.new(RunningSushi::Log, repo, checkpoint, local_head, locations)
+rescue ChefDiff::Changeset::ReferenceError => e
+  RunningSushi::Log.error("Repo error, invalid revision (#{e.message}), exiting")
+  exit(2)
+end
+
+# The repo-relative directories ChefDiff::Changeset looks for each type in.
+# The keys double as RunningSushi::Knife.new options (checkout_knife).
+def changeset_locations
+  node_dir, client_dir, environment_dir, role_local_dir = pod_config
+  {
+    cookbook_dirs: RunningSushi::Config.cookbook_paths,
+    client_dir: client_dir,
+    databag_dir: RunningSushi::Config.databag_path,
+    environment_dir: environment_dir,
+    node_dir: node_dir,
+    role_local_dir: role_local_dir,
+    role_dir: RunningSushi::Config.role_path
+  }
+end
+
+# A ChefDiff::Changeset of every tracked file under +locations+, each a
+# :modified change: a nil start revision lists the tree instead of a diff.
+def git_tree(repo, locations)
+  ChefDiff::Changeset.new(RunningSushi::Log, repo, nil, nil, locations)
+end
+
+# A lambda returning git_tree, listed on first call only, so a diff touching
+# no role, node, client, environment or deleted cookbook never lists the
+# tree.
+def lazy_git_tree(repo, locations)
+  listing = nil
+  -> { listing ||= git_tree(repo, locations) }
+end
+
+# The names of the nodes the last run uploaded whose checkpoint stamp on the
+# Chef Server is not that run's revision, so they are uploaded again.
+#
+# This works around a Chef race: a chef-client run that started before the
+# upload saves its node back at the end and overwrites the new content.
+# The nodes are re-queued by name (see Diff.named_changes), so a node moved
+# since is uploaded from where its file is now, and one with no file in the
+# tracked tree is skipped.
+def unverified_nodes(knife)
+  checkpoint, nodes = read_node_checkpoint
+  return [] unless checkpoint
+
+  nodes.map { |node| File.basename(node) }.reject { |name| knife.verify_node_upload(name, checkpoint) }
+end
+
+# Whether local roles count, on the diff path and in reconcile alike. A local
+# role overrides a global one for a single pod (roles_local/<pod_name>/).
+# Without pod_name the server tracks every pod, and one Chef role serves all
+# their nodes, so a pod's override would leak to every other pod; there the
+# local tree is ignored and every role comes from the global one.
+#
+# Same truthiness test as pod_config: a pod_name that pod_config treats as
+# absent (false) must not turn local roles on, or the whole roles_local tree
+# would count.
+def local_roles?
+  RunningSushi::Config.pod_name ? true : false
+end
+
 def upload_changed(repo, checkpoint)
   local_head = repo.head_rev
-  base_dir = File.join(RunningSushi::Config.master_path,
-                       RunningSushi::Config.reponame)
-
-  node_dir, client_dir, environment_dir, role_local_dir = pod_config
-
-  knife = RunningSushi::Knife.new(
-    logger: RunningSushi::Log,
-    master_path: RunningSushi::Config.master_path,
-    base_dir: base_dir,
-    client_dir: File.join(base_dir, client_dir),
-    cookbook_dirs: RunningSushi::Config.cookbook_paths.map do |x|
-      File.join(base_dir, x)
-    end,
-    databag_dir: File.join(base_dir, RunningSushi::Config.databag_path),
-    environment_dir: File.join(base_dir, environment_dir),
-    node_dir: File.join(base_dir, node_dir),
-    role_dir: File.join(base_dir, RunningSushi::Config.role_path),
-    role_local_dir: File.join(base_dir, role_local_dir)
-  )
-
-  chef_upload(knife, repo, checkpoint, local_head)
-
+  chef_upload(checkout_knife, repo, checkpoint, local_head)
   local_head
 end
-# rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
-# OptionParser must enumerate all 7 CLI flags; each option occupies 2-5 lines.
-# BlockLength: the OptionParser block is 27 lines (limit 25) — splitting it
-# into sub-methods would add no clarity.
-# rubocop:disable Metrics/AbcSize, Metrics/BlockLength, Metrics/MethodLength
+# Compares the working tree with the Chef Server, logs the drift and, unless
+# in dry-run, fixes it (RunningSushi::Reconcile).
+#
+# When HEAD is not the checkpoint, the tree holds commits never applied,
+# which a compare counts as drift; that is warned about. A real run never
+# gets here in that state: its diff step has just moved the checkpoint to
+# HEAD. A dry run does, since it neither updates the repo nor writes the
+# checkpoint: after a failed real run, a pull by hand, or on a pod without a
+# checkpoint yet. It still compares then, as it writes nothing and skipping
+# would leave exactly those pods without a report; the warning says the
+# report then lists everything a real run would change, unapplied commits
+# included. A real run keeps refusing, so it never "fixes" unapplied commits.
+def reconcile(repo)
+  dry_run = RunningSushi::Config.dry_run
+  warning = unapplied_head_warning(repo.head_rev, read_checkpoint, dry_run: dry_run)
+  RunningSushi::Log.warn(warning) if warning
+  return if warning && !dry_run
+
+  knife = checkout_knife
+  checks = compare_drift(repo, knife)
+
+  action('Reconciling the Chef Server with Git')
+  return if dry_run
+
+  rev = repo.head_rev
+  RunningSushi::Reconcile.apply(knife, checks, rev) { |nodes| add_node_checkpoint(nodes, rev) }
+end
+
+# Compares every file in Git with the server and logs the drift; returns
+# the RunningSushi::Reconcile::Checks.
+def compare_drift(repo, knife)
+  locations = changeset_locations
+  RunningSushi::Reconcile.compare(knife, git_tree(repo, locations), RunningSushi::Log, locations,
+                                  local_roles: local_roles?, types: reconcile_types)
+end
+
+# Adds +nodes+ to those the next run verifies (see unverified_nodes). The
+# ones already recorded are kept only when recorded for +rev+: older ones
+# carry an older stamp and would all fail verification against +rev+.
+def add_node_checkpoint(nodes, rev)
+  recorded_rev, recorded = read_node_checkpoint
+  write_node_checkpoint((recorded_rev == rev ? recorded : []) + nodes, rev)
+end
+
+# The RunningSushi::Reconcile::TYPES keys a reconcile compares: all of them
+# when the reconcile setting is true, else the ones it lists (from
+# --reconcile=TYPES, or the config file as strings or symbols).
+def reconcile_types
+  setting = RunningSushi::Config.reconcile
+  setting == true ? RunningSushi::Reconcile::TYPES.keys : Array(setting).map(&:to_sym).uniq
+end
+
+def reconcile_type_names
+  RunningSushi::Reconcile::TYPES.keys.join(',')
+end
+
+# Exits 2 when the reconcile setting names a type reconcile doesn't know,
+# or an empty list (which would reconcile nothing while looking enabled),
+# before the run takes the lock or changes anything.
+def check_reconcile_types
+  return unless RunningSushi::Config.reconcile
+
+  unknown = reconcile_types - RunningSushi::Reconcile::TYPES.keys
+  error = if reconcile_types.empty? then 'No reconcile types given'
+          elsif unknown.any? then "Unknown reconcile types: #{unknown.join(',')}"
+          end
+  return unless error
+
+  RunningSushi::Log.error("#{error}; known: #{reconcile_type_names}")
+  exit(2)
+end
+
+# The reconcile warning for a +head+ that is not the +checkpoint+ (nil
+# when there is none yet); nil when +head+ is the checkpoint.
+def unapplied_head_warning(head, checkpoint, dry_run:)
+  return if head == checkpoint
+
+  applied = checkpoint ? "checkpoint #{checkpoint}" : 'no checkpoint yet'
+  return "Reconcile: skipped, HEAD #{head} is not applied yet (#{applied})" unless dry_run
+
+  "Reconcile: HEAD #{head} is not applied yet (#{applied}), so the report counts its unapplied commits as drift"
+end
+
+# A Knife reading the same directories as the changeset (changeset_locations),
+# made absolute under the checkout.
+def checkout_knife
+  base_dir = File.join(RunningSushi::Config.master_path, RunningSushi::Config.reponame)
+  dirs = changeset_locations.transform_values do |dir|
+    dir.is_a?(Array) ? dir.map { |d| File.join(base_dir, d) } : File.join(base_dir, dir)
+  end
+  RunningSushi::Knife.new(dirs.merge(logger: RunningSushi::Log, master_path: RunningSushi::Config.master_path,
+                                     base_dir: base_dir))
+end
+
+# OptionParser must enumerate all 8 CLI flags; each option occupies 2-5 lines.
+# BlockLength: the OptionParser block is 30 lines (limit 25) — splitting it
+# into sub-methods would add no clarity. The complexity cops count the
+# branches inside the option blocks, which are each one flag's parsing.
+# rubocop:disable-next Metrics/AbcSize, Metrics/BlockLength, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 def setup_config
   options = {}
   OptionParser.new do |opts|
     options[:config_file] = RunningSushi::Config.config_file
     opts.on('-n', '--dry-run', 'Dryrun mode') do |s|
       options[:dry_run] = s
+    end
+    # -r takes no TYPES: an optional argument would read -rn as the type n.
+    opts.on('-r', 'Make the Chef Server match Git, for every type') do
+      options[:reconcile] = true
+    end
+    opts.on('--reconcile [TYPES]', Array,
+            "Like -r, or only for the comma-separated TYPES (#{reconcile_type_names})") do |s|
+      options[:reconcile] = s ? s.map(&:to_sym) : true
     end
     opts.on('-v', '--verbosity', 'Verbosity level. Twice for debug.') do
       # If -vv is supplied this block is executed twice
@@ -356,6 +352,7 @@ def setup_config
   RunningSushi::Config.from_file(options[:config_file]) if File.exist?(File.expand_path(options[:config_file]))
   RunningSushi::Config.merge!(options)
   RunningSushi::Log.verbosity = RunningSushi::Config.verbosity
+  check_reconcile_types
   RunningSushi::Log.warn('Dryrun mode activated, no changes will be made.') if RunningSushi::Config.dry_run
   RunningSushi::Hooks.get(RunningSushi::Config.plugin_path)
   at_exit do
@@ -368,7 +365,6 @@ def setup_config
   Chef::Config[:chef_server_url] = RunningSushi::Config.chef_server_url
   Chef::Config[:ssl_verify_mode] = RunningSushi::Config.ssl_verify_mode || :verify_peer
 end
-# rubocop:enable Metrics/AbcSize, Metrics/BlockLength, Metrics/MethodLength
 
 def fetch_repo
   repo_path = File.join(RunningSushi::Config.master_path,
@@ -379,10 +375,19 @@ def fetch_repo
   r
 end
 
+# Pulls +repo+. ChefDiff raises with git's output but no longer logs it, and
+# syslog is where a failed cron run is looked into.
+def update_repo(repo)
+  repo.update
+rescue Mixlib::ShellOut::ShellCommandFailed => e
+  RunningSushi::Log.error("Updating the repo failed: #{e.message}")
+  raise
+end
+
 # Top-level script entry point: all branches (clone vs update, dry-run, no-repo,
 # no-change, upload failure) are load-bearing and must remain in one function
 # so the control-flow stays readable as a narrative.
-# rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+# rubocop:disable-next Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 def main
   setup_config
 
@@ -396,7 +401,7 @@ def main
 
   if repo.exists?
     action('Updating repo')
-    repo.update unless RunningSushi::Config.dry_run
+    update_repo(repo) unless RunningSushi::Config.dry_run
   else
     unless RunningSushi::Config.repo_url
       RunningSushi::Log.error(
@@ -439,12 +444,25 @@ def main
     end
   end
 
+  # After a failed diff step the server is mid-apply, so there is nothing
+  # meaningful to compare it with.
+  if $success && RunningSushi::Config.reconcile
+    begin
+      reconcile(repo)
+    rescue StandardError => e
+      $success = false
+      $status_msg = "Reconcile failed: #{e.message}"
+      e.backtrace.each do |line|
+        RunningSushi::Log.error(line)
+      end
+    end
+  end
+
   RunningSushi::Log.warn($status_msg)
   RunningSushi::Hooks.postrun(RunningSushi::Config.dry_run, $success,
                               $status_msg)
   delete_pidfile
 end
-# rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
 main
 # rubocop:enable Style/GlobalVars

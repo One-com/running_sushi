@@ -36,7 +36,9 @@ require 'chef/api_client_v1'
 require 'chef/cookbook_version'
 require 'running_sushi/knife'
 require 'logger'
+require 'open3'
 require 'tempfile'
+require 'tmpdir'
 
 FIXTURES_DIR = File.expand_path('../fixtures', __dir__)
 
@@ -61,7 +63,7 @@ Chef::Config[:ssl_verify_mode] = :verify_none
 RSpec.configure do |config|
   # Wipe server state before every example so tests are fully independent
   # without requiring per-describe cleanup blocks.
-  config.before(:each) { CHEF_ZERO_SERVER.clear_data if defined?(CHEF_ZERO_SERVER) }
+  config.before { CHEF_ZERO_SERVER.clear_data if defined?(CHEF_ZERO_SERVER) }
 
   # Shut down the shared server and clean up the temp key file after the
   # full suite finishes.
@@ -86,4 +88,47 @@ def build_knife(logger: Logger.new(File::NULL))
                             databag_dir: File.join(FIXTURES_DIR, 'data_bags'),
                             client_dir: File.join(FIXTURES_DIR, 'clients')
                           })
+end
+
+# For a failing call that must not have written anything:
+# expect { run }.to raise_error(Error).and not_change { state }
+RSpec::Matchers.define_negated_matcher :not_change, :change
+
+# ── Git repos for the bin/running-sushi specs ────────────────────────────────
+
+# Shields the spec repos from the user's git config: CI runs with HOME=/tmp
+# and no identity, and a developer's commit signing or global hooks would
+# fail or reject the spec commits.
+GIT_ISOLATION = [
+  '-c', 'user.name=Running Sushi Spec', '-c', 'user.email=spec@example.com',
+  '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null'
+].freeze
+
+# Runs git in +dir+ and returns its output; raises on a non-zero exit, so a
+# broken repo setup fails the example at the step that broke it.
+def git(dir, *args)
+  out, status = Open3.capture2e(*(['git', '-C', dir] + GIT_ISOLATION + args))
+  raise "git #{args.join(' ')} failed: #{out}" unless status.success?
+
+  out
+end
+
+# Copies each fixture (a path under spec/fixtures, file or cookbook dir) into
+# +repo_dir+ at the same path. A Hash instead maps each fixture to a
+# different path in the repo, e.g. 'nodes/web01.json' => 'nodes/pod1/web01.json'.
+def add_fixtures(repo_dir, fixtures)
+  targets = fixtures.is_a?(Hash) ? fixtures : fixtures.to_h { |f| [f, f] }
+  targets.each do |from, to|
+    dest = File.join(repo_dir, to)
+    FileUtils.mkdir_p(File.dirname(dest))
+    FileUtils.cp_r(File.join(FIXTURES_DIR, from), dest)
+  end
+end
+
+# Commits everything in +repo_dir+ (additions, edits and deletions) and
+# returns the new HEAD sha.
+def commit_all(repo_dir, message = 'change')
+  git(repo_dir, 'add', '-A')
+  git(repo_dir, 'commit', '-q', '--allow-empty', '-m', message)
+  git(repo_dir, 'rev-parse', 'HEAD').strip
 end
