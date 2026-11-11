@@ -28,6 +28,7 @@ module RunningSushi
     extend Mixlib::Config
 
     dry_run false
+    reconcile false
     verbosity Logger::WARN
     timestamp false
     config_file '/etc/chef/running_sushi_config.rb'

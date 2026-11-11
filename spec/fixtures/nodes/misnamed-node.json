@@ -1,0 +1,6 @@
+{
+  "name": "other-node",
+  "chef_environment": "_default",
+  "normal": {},
+  "run_list": []
+}

@@ -25,7 +25,7 @@ module RunningSushi
   # @@init and @@level track module-level state; Log is a standalone namespace
   # never mixed into other classes, so the class-variable inheritance hazard
   # does not apply.
-  # rubocop:disable Style/ClassVars
+  # rubocop:disable-next Style/ClassVars
   module Log
     @@init = false
     @@level = Logger::WARN
@@ -57,29 +57,43 @@ module RunningSushi
       puts msg if $stdout.tty?
     end
 
-    def self.debug(msg)
-      return unless @@level == Logger::DEBUG
-
-      logit(Syslog::LOG_DEBUG, "DEBUG: #{msg}")
+    # The level methods follow ::Logger's calling convention, so Log can be
+    # passed where a ::Logger is expected (ChefDiff::Changeset): each takes a
+    # message or a block that builds it, and the block only runs when the
+    # level is on. debug?/info? let callers skip work for levels that are off.
+    def self.debug?
+      @@level == Logger::DEBUG
     end
 
-    def self.info(msg)
-      return unless @@level <= Logger::INFO
-
-      logit(Syslog::LOG_INFO, "INFO: #{msg}")
+    def self.info?
+      @@level <= Logger::INFO
     end
 
-    def self.warn(msg)
-      logit(Syslog::LOG_WARNING, "WARN: #{msg}")
+    def self.debug(msg = nil, &block)
+      write(Syslog::LOG_DEBUG, 'DEBUG', msg, &block) if debug?
     end
 
-    def self.error(msg)
-      logit(Syslog::LOG_ERR, "ERROR: #{msg}")
+    def self.info(msg = nil, &block)
+      write(Syslog::LOG_INFO, 'INFO', msg, &block) if info?
     end
 
-    def self.fatal(msg)
-      logit(Syslog::LOG_CRIT, "CRITICAL: #{msg}")
+    def self.warn(msg = nil, &block)
+      write(Syslog::LOG_WARNING, 'WARN', msg, &block)
+    end
+
+    def self.error(msg = nil, &block)
+      write(Syslog::LOG_ERR, 'ERROR', msg, &block)
+    end
+
+    def self.fatal(msg = nil, &block)
+      write(Syslog::LOG_CRIT, 'CRITICAL', msg, &block)
+    end
+
+    # Logs +msg+, or what the block returns when one is given, at the syslog
+    # +priority+ with a "+label+: " prefix.
+    def self.write(priority, label, msg)
+      text = block_given? ? yield : msg
+      logit(priority, "#{label}: #{text}")
     end
   end
-  # rubocop:enable Style/ClassVars
 end

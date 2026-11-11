@@ -16,31 +16,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Tests for RunningSushi::Hooks
-#
-# Scope:
-#   * Hooks.get — file-absent branch (no-op) and file-present branch (eval).
-#
-# No Chef server or syslog connection is required.
-
-require_relative 'spec_helper'
+require_relative '../spec_helper'
 require 'tempfile'
 require 'running_sushi/hooks'
 
 describe RunningSushi::Hooks do
   describe '.get' do
-    it 'does nothing when the file does not exist' do
-      expect { RunningSushi::Hooks.get('/non/existent/path.rb') }.not_to raise_error
+    context 'without a plugin file' do
+      it 'loads nothing' do
+        expect(described_class.get('/non/existent/path.rb')).to be_nil
+      end
     end
 
-    it 'evaluates the file contents when the file exists' do
-      # Use a sentinel method (not a constant) to avoid NameError on
-      # re-runs and to avoid the "already initialized constant" warning.
-      Tempfile.create(['hooks_test', '.rb']) do |f|
-        f.write('def self.hooks_test_sentinel; :loaded; end')
-        f.flush
-        RunningSushi::Hooks.get(f.path)
-        expect(RunningSushi::Hooks.hooks_test_sentinel).to eq(:loaded)
+    context 'with a plugin file' do
+      # A sentinel method, not a constant: redefining it on a re-run is
+      # silent, a constant would warn "already initialized".
+      it 'evaluates it in the Hooks class' do
+        Tempfile.create(['hooks_test', '.rb']) do |f|
+          File.write(f.path, 'def self.hooks_test_sentinel; :loaded; end')
+          described_class.get(f.path)
+          expect(described_class.hooks_test_sentinel).to eq(:loaded)
+        end
       end
     end
   end
